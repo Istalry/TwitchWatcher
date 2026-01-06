@@ -64,6 +64,18 @@ export class HistoryStore {
         }
     }
 
+    public deleteUser(username: string) {
+        if (this.users.has(username)) {
+            this.users.delete(username);
+            this.save();
+        }
+    }
+
+    public clearAll() {
+        this.users.clear();
+        this.save();
+    }
+
     private save() {
         // Debounce this potentially if high traffic
         try {

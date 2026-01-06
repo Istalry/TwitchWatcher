@@ -5,6 +5,7 @@ import { twitchBot } from './services/twitchClient';
 import { historyStore } from './store/history';
 import { actionQueue } from './store/actionQueue';
 import { falsePositiveStore } from './store/falsePositives';
+import { settingsStore } from './store/settings';
 import { authService } from './services/authService';
 import open from 'open';
 import crypto from 'crypto';
@@ -155,6 +156,31 @@ app.post('/debug/flag', (req, res) => {
         status: 'pending'
     });
     res.json({ success: true, message: 'Debug action created' });
+});
+
+// 8. Settings
+app.get('/settings', (req, res) => {
+    res.json(settingsStore.get());
+});
+
+app.post('/settings', (req, res) => {
+    const { aiLanguage } = req.body;
+    if (aiLanguage) {
+        settingsStore.update({ aiLanguage });
+    }
+    res.json({ success: true, settings: settingsStore.get() });
+});
+
+// 9. User Management
+app.delete('/users', (req, res) => {
+    historyStore.clearAll();
+    res.json({ success: true, message: 'All user data cleared' });
+});
+
+app.delete('/users/:username', (req, res) => {
+    const { username } = req.params;
+    historyStore.deleteUser(username);
+    res.json({ success: true, message: `User ${username} deleted` });
 });
 
 // Sub-function wrapper to allow async await in top-level if needed, but not strictly required here

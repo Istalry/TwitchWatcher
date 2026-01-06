@@ -1,14 +1,15 @@
 import React, { useState, useMemo } from 'react';
 import { type ChatUser } from '../types';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Clock, Ban, User, Users, MessageSquare, Search, RotateCcw } from 'lucide-react';
+import { Clock, Ban, User, Users, MessageSquare, Search, RotateCcw, Trash2 } from 'lucide-react';
 
 interface Props {
     users: ChatUser[];
     onTest?: boolean; // For testing purposes to suppress excessive animations if needed
+    onDeleteUser?: (username: string) => void;
 }
 
-export const UserList: React.FC<Props> = ({ users }) => {
+export const UserList: React.FC<Props> = ({ users, onDeleteUser }) => {
     const [selectedUser, setSelectedUser] = useState<string | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
 
@@ -46,6 +47,14 @@ export const UserList: React.FC<Props> = ({ users }) => {
             console.error('Failed to moderate', err);
         }
     };
+
+    const handleDelete = (username: string) => {
+        if (!confirm(`Are you sure you want to delete data for ${username}?`)) return;
+        if (onDeleteUser) {
+            onDeleteUser(username);
+            setSelectedUser(null);
+        }
+    }
 
     return (
         <div className="grid grid-cols-12 gap-6 h-full">
@@ -167,6 +176,12 @@ export const UserList: React.FC<Props> = ({ users }) => {
                                     </div>
                                 </div>
                                 <div className="flex gap-2">
+                                    <button
+                                        onClick={() => handleDelete(activeUser.username)}
+                                        className="bg-red-500/10 hover:bg-red-500/20 text-red-500 px-4 py-2 rounded-lg text-xs font-bold transition-colors flex items-center gap-2"
+                                    >
+                                        <Trash2 size={14} /> Delete Data
+                                    </button>
                                     {activeUser.status === 'banned' && (
                                         <button
                                             onClick={(e) => handleModerate(e, activeUser.username, 'unban')}

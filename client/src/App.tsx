@@ -3,6 +3,7 @@ import { ActionCard } from './components/ActionCard';
 import { UserList } from './components/UserList';
 import { Sidebar } from './components/Sidebar';
 import { Topbar } from './components/Topbar';
+import { Settings } from './components/Settings';
 import { type PendingAction, type ChatUser } from './types';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Bug } from 'lucide-react';
@@ -10,7 +11,7 @@ import { Power } from 'lucide-react'; // Keeping for shutdown screen
 import './styles/neo.css';
 
 function App() {
-  const [activeTab, setActiveTab] = useState<'actions' | 'users' | 'debug'>('actions');
+  const [activeTab, setActiveTab] = useState<'actions' | 'users' | 'debug' | 'settings'>('actions');
   const [actions, setActions] = useState<PendingAction[]>([]);
   const [users, setUsers] = useState<ChatUser[]>([]);
   const [isShuttingDown, setIsShuttingDown] = useState(false);
@@ -59,6 +60,16 @@ function App() {
       setActions(prev => prev.filter(a => a.id !== id));
     } catch (err) {
       console.error('Failed to resolve action', err);
+    }
+  };
+
+  const handleDeleteUser = async (username: string) => {
+    try {
+      await fetch(`/api/users/${username}`, { method: 'DELETE' });
+      // Refresh data
+      setUsers(prev => prev.filter(u => u.username !== username));
+    } catch (err) {
+      console.error('Failed to delete user', err);
     }
   };
 
@@ -163,7 +174,19 @@ function App() {
                 transition={{ duration: 0.2 }}
                 className="h-[calc(100vh-8rem)]"
               >
-                <UserList users={users} />
+                <UserList users={users} onDeleteUser={handleDeleteUser} />
+              </motion.div>
+            )}
+
+            {activeTab === 'settings' && (
+              <motion.div
+                key="settings"
+                initial={{ opacity: 0, scale: 0.98 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.98 }}
+                transition={{ duration: 0.2 }}
+              >
+                <Settings />
               </motion.div>
             )}
 

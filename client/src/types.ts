@@ -19,3 +19,7 @@ export interface PendingAction {
     timestamp: number;
     status: 'pending' | 'approved' | 'discarded';
 }
+
+export interface AppSettings {
+    aiLanguage: string;
+}

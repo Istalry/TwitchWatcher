@@ -1,8 +1,8 @@
-import { Bug, Users, Zap } from 'lucide-react';
+import { Bug, Users, Zap, Settings as SettingsIcon } from 'lucide-react';
 
 interface SidebarProps {
-    activeTab: 'actions' | 'users' | 'debug';
-    setActiveTab: (tab: 'actions' | 'users' | 'debug') => void;
+    activeTab: 'actions' | 'users' | 'debug' | 'settings';
+    setActiveTab: (tab: 'actions' | 'users' | 'debug' | 'settings') => void;
 }
 
 export function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
@@ -10,6 +10,7 @@ export function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
         { id: 'actions', label: 'Actions', icon: Zap },
         { id: 'users', label: 'Live Users', icon: Users },
         { id: 'debug', label: 'Debug', icon: Bug },
+        { id: 'settings', label: 'Settings', icon: SettingsIcon },
     ] as const;
 
     return (
@@ -21,6 +22,7 @@ export function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
                     return (
                         <button
                             key={tab.id}
+                            // @ts-ignore
                             onClick={() => setActiveTab(tab.id)}
                             className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-bold text-sm tracking-wide ${isActive
                                 ? 'bg-blue-600 text-white shadow-[0_0_20px_rgba(37,99,235,0.3)]'

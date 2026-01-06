@@ -2,6 +2,7 @@ import { Ollama } from 'ollama';
 import { config } from '../config';
 import { falsePositiveStore } from '../store/falsePositives';
 import { ModerationResult } from '../store/types';
+import { settingsStore } from '../store/settings';
 
 export class OllamaService {
     private ollama: Ollama;
@@ -20,6 +21,8 @@ export class OllamaService {
             ? `\nRecent Chat History for this user (context only, do not moderate these):\n${history.map(m => `- ${m}`).join('\n')}\n`
             : '';
 
+        const language = settingsStore.get().aiLanguage;
+
         return `You are a Twitch Chat Moderator. Your job is to analyze messages for Hateful content, Harassment, Excessive Vulgarity, or Spam.
     
     ${safelistContext}
@@ -31,7 +34,7 @@ export class OllamaService {
     Respond ONLY with a JSON object in this format:
     {
       "flagged": boolean,
-      "reason": "short explanation",
+      "reason": "short explanation in ${language}",
       "suggestedAction": "none" | "timeout" | "ban"
     }
     
