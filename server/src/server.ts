@@ -1,0 +1,137 @@
+import express from 'express';
+import cors from 'cors';
+import { config } from './config';
+import { twitchBot } from './services/twitchClient';
+import { historyStore } from './store/history';
+import { actionQueue } from './store/actionQueue';
+import { falsePositiveStore } from './store/falsePositives';
+import crypto from 'crypto';
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+// --- ROUTES ---
+
+// 1. Get All Users
+app.get('/users', (req, res) => {
+    const users = historyStore.getAllUsers();
+    // Sort by recent activity or name? Let's just return list for now.
+    res.json(users);
+});
+
+// 2. Get Specific User Messages
+app.get('/users/:username', (req, res) => {
+    const user = historyStore.getUser(req.params.username);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    res.json(user);
+});
+
+// 3. Get Pending Actions
+app.get('/actions', (req, res) => {
+    res.json(actionQueue.getPending());
+});
+
+// 4. Resolve Action (Approve/Discard)
+app.post('/actions/:id/resolve', async (req, res) => {
+    const { id } = req.params;
+    const { resolution, banDuration } = req.body; // resolution: 'approved' | 'discarded'
+
+    const action = actionQueue.get(id);
+    if (!action) return res.status(404).json({ error: 'Action not found' });
+
+    actionQueue.resolve(id, resolution);
+
+    if (resolution === 'discarded') {
+        // Add to false positives
+        falsePositiveStore.add(action.messageContent);
+        return res.json({ success: true, message: 'Action discarded, learned as false positive.' });
+    }
+
+    if (resolution === 'approved') {
+        // Execute Ban/Timeout
+        if (banDuration === 'permanent') {
+            await twitchBot.banUser(action.username, `Moderated: ${action.flaggedReason}`);
+            historyStore.updateUserStatus(action.username, 'banned');
+        } else {
+            // Default to 10m (600s) if not specified or parsed
+            const duration = parseInt(banDuration) || 600;
+            await twitchBot.timeoutUser(action.username, duration, `Moderated: ${action.flaggedReason}`);
+            historyStore.updateUserStatus(action.username, 'timed_out');
+        }
+        return res.json({ success: true, message: 'Action approved and executed.' });
+    }
+
+    res.status(400).json({ error: 'Invalid resolution' });
+});
+
+// 5. Manual Moderation (from Live Users)
+app.post('/users/:username/moderate', async (req, res) => {
+    const { username } = req.params;
+    const { action } = req.body; // 'ban' | 'timeout'
+
+    // We should probably allow duration for timeout, skipping for brevity/default 10m
+    try {
+        if (action === 'ban') {
+            await twitchBot.banUser(username, 'Manual Ban');
+            historyStore.updateUserStatus(username, 'banned');
+        } else if (action === 'timeout') {
+            await twitchBot.timeoutUser(username, 600, 'Manual Timeout');
+            historyStore.updateUserStatus(username, 'timed_out');
+        } else {
+            return res.status(400).json({ error: 'Invalid action' });
+        }
+        res.json({ success: true, message: `User ${action}ed` });
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to execute moderation' });
+    }
+});
+
+// 6. Shutdown
+app.post('/shutdown', (req, res) => {
+    console.log('Shutdown requested...');
+    res.json({ message: 'Server shutting down...' });
+    setTimeout(() => {
+        process.exit(0);
+    }, 1000);
+});
+
+// 7. Debug Endpoints
+app.post('/debug/message', async (req, res) => {
+    const { username, message } = req.body;
+    // Simulate Twitch message (bypass tmi event usually, or call handler directly)
+    // We need to access the handler. Since it's private in TwitchBot, let's expose a public method for debug.
+    await twitchBot.simulateMessage(username, message);
+    res.json({ success: true, message: 'Message simulated' });
+});
+
+app.post('/debug/flag', (req, res) => {
+    const { username, message, reason } = req.body;
+    actionQueue.add({
+        id: crypto.randomUUID(),
+        username,
+        messageContent: message,
+        flaggedReason: reason || 'Manual Debug Flag',
+        suggestedAction: 'timeout',
+        timestamp: Date.now(),
+        status: 'pending'
+    });
+    res.json({ success: true, message: 'Debug action created' });
+});
+
+// Sub-function wrapper to allow async await in top-level if needed, but not strictly required here
+const start = async () => {
+    try {
+        // Start Twitch Bot
+        await twitchBot.connect();
+
+        // Start Server
+        app.listen(config.server.port, () => {
+            console.log(`Server running on http://localhost:${config.server.port}`);
+        });
+    } catch (err) {
+        console.error('Failed to start server:', err);
+    }
+};
+
+start();
