@@ -25,3 +25,5 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+server/users.json
+server/falsePositives.json
