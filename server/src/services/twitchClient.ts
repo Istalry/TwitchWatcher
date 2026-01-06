@@ -1,4 +1,5 @@
 import tmi from 'tmi.js';
+import axios from 'axios';
 import { config } from '../config';
 import { historyStore } from '../store/history';
 import { actionQueue } from '../store/actionQueue';
@@ -8,6 +9,7 @@ import crypto from 'crypto';
 
 export class TwitchBot {
     private client: tmi.Client | null = null;
+    private broadcasterId: string | null = null;
 
     constructor() {
         // Client is initialized in connect()
@@ -79,8 +81,34 @@ export class TwitchBot {
 
             this.setupListeners();
             await this.client.connect();
+
+            // Fetch our own ID (Broadcaster ID)
+            const selfData = await this.getHelixUser(config.twitch.username);
+            if (selfData) {
+                this.broadcasterId = selfData.id;
+                console.log(`Authenticated as ${selfData.display_name} (ID: ${this.broadcasterId})`);
+            }
         } catch (err) {
             console.error('Failed to connect to Twitch:', err);
+        }
+    }
+
+    private async getHelixUser(username: string) {
+        try {
+            const token = await authService.getToken();
+            if (!token) return null;
+
+            const res = await axios.get(`https://api.twitch.tv/helix/users?login=${username}`, {
+                headers: {
+                    'Client-ID': config.twitch.clientId,
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+
+            return res.data.data[0] || null;
+        } catch (err) {
+            console.error(`Failed to lookup user ${username}:`, err);
+            return null;
         }
     }
 
@@ -94,35 +122,89 @@ export class TwitchBot {
     }
 
     public async banUser(username: string, reason: string) {
-        if (!this.client) { console.error('Cannot ban user: Twitch client not connected'); return; }
+        if (!this.broadcasterId) { console.error('Cannot ban: Broadcaster ID unknown'); return; }
+
         try {
-            await this.client.ban(config.twitch.channel, username, reason);
+            const targetUser = await this.getHelixUser(username);
+            if (!targetUser) { console.error(`Cannot ban: User ${username} not found`); return; }
+
+            const token = await authService.getToken();
+            await axios.post(`https://api.twitch.tv/helix/moderation/bans?broadcaster_id=${this.broadcasterId}&moderator_id=${this.broadcasterId}`,
+                {
+                    data: {
+                        user_id: targetUser.id,
+                        reason: reason
+                    }
+                },
+                {
+                    headers: {
+                        'Client-ID': config.twitch.clientId,
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                }
+            );
+
             historyStore.updateUserStatus(username, 'banned');
             console.log(`Banned ${username} for: ${reason}`);
-        } catch (err) {
-            console.error(`Failed to ban ${username}:`, err);
+        } catch (err: any) {
+            console.error(`Failed to ban ${username}:`, err.response?.data || err.message);
         }
     }
 
     public async timeoutUser(username: string, duration: number, reason: string) {
-        if (!this.client) { console.error('Cannot timeout user: Twitch client not connected'); return; }
+        if (!this.broadcasterId) { console.error('Cannot timeout: Broadcaster ID unknown'); return; }
+
         try {
-            await this.client.timeout(config.twitch.channel, username, duration, reason);
+            const targetUser = await this.getHelixUser(username);
+            if (!targetUser) { console.error(`Cannot timeout: User ${username} not found`); return; }
+
+            const token = await authService.getToken();
+            await axios.post(`https://api.twitch.tv/helix/moderation/bans?broadcaster_id=${this.broadcasterId}&moderator_id=${this.broadcasterId}`,
+                {
+                    data: {
+                        user_id: targetUser.id,
+                        duration: duration,
+                        reason: reason
+                    }
+                },
+                {
+                    headers: {
+                        'Client-ID': config.twitch.clientId,
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                }
+            );
+
             historyStore.updateUserStatus(username, 'timed_out');
             console.log(`Timed out ${username} for ${duration}s: ${reason}`);
-        } catch (err) {
-            console.error(`Failed to timeout ${username}:`, err);
+        } catch (err: any) {
+            console.error(`Failed to timeout ${username}:`, err.response?.data || err.message);
         }
     }
 
     public async unbanUser(username: string) {
-        if (!this.client) { console.error('Cannot unban user: Twitch client not connected'); return; }
+        if (!this.broadcasterId) { console.error('Cannot unban: Broadcaster ID unknown'); return; }
+
         try {
-            await this.client.unban(config.twitch.channel, username);
+            const targetUser = await this.getHelixUser(username);
+            if (!targetUser) { console.error(`Cannot unban: User ${username} not found`); return; }
+
+            const token = await authService.getToken();
+            await axios.delete(`https://api.twitch.tv/helix/moderation/bans?broadcaster_id=${this.broadcasterId}&moderator_id=${this.broadcasterId}&user_id=${targetUser.id}`,
+                {
+                    headers: {
+                        'Client-ID': config.twitch.clientId,
+                        'Authorization': `Bearer ${token}`
+                    }
+                }
+            );
+
             historyStore.updateUserStatus(username, 'active');
             console.log(`Unbanned ${username}`);
-        } catch (err) {
-            console.error(`Failed to unban ${username}:`, err);
+        } catch (err: any) {
+            console.error(`Failed to unban ${username}:`, err.response?.data || err.message);
         }
     }
 }
