@@ -5,6 +5,8 @@ import { twitchBot } from './services/twitchClient';
 import { historyStore } from './store/history';
 import { actionQueue } from './store/actionQueue';
 import { falsePositiveStore } from './store/falsePositives';
+import { authService } from './services/authService';
+import open from 'open';
 import crypto from 'crypto';
 
 const app = express();
@@ -12,6 +14,41 @@ app.use(cors());
 app.use(express.json());
 
 // --- ROUTES ---
+
+// 0. Auth Routes
+app.get('/auth/twitch', (req, res) => {
+    const authUrl = authService.getAuthUrl();
+    res.redirect(authUrl);
+});
+
+app.get('/auth/twitch/callback', async (req, res) => {
+    const { code, error } = req.query;
+
+    if (error) {
+        return res.status(400).send(`Authentication failed: ${error}`);
+    }
+
+    if (!code || typeof code !== 'string') {
+        return res.status(400).send('Invalid code returned from Twitch');
+    }
+
+    try {
+        await authService.exchangeCodeForToken(code);
+        // Re-connect bot with new token
+        await twitchBot.connect();
+
+        res.send(`
+            <html>
+                <body style="font-family: sans-serif; text-align: center; padding-top: 50px;">
+                    <h1>Authentication Successful!</h1>
+                    <p>You can close this window and return to the app.</p>
+                </body>
+            </html>
+        `);
+    } catch (err) {
+        res.status(500).send('Failed to exchange code for token. Check server logs.');
+    }
+});
 
 // 1. Get All Users
 app.get('/users', (req, res) => {
@@ -74,10 +111,11 @@ app.post('/users/:username/moderate', async (req, res) => {
     try {
         if (action === 'ban') {
             await twitchBot.banUser(username, 'Manual Ban');
-            historyStore.updateUserStatus(username, 'banned');
+            // historyStore.updateUserStatus is called inside twitchBot.banUser now, but we'll keep it consistent
         } else if (action === 'timeout') {
             await twitchBot.timeoutUser(username, 600, 'Manual Timeout');
-            historyStore.updateUserStatus(username, 'timed_out');
+        } else if (action === 'unban') {
+            await twitchBot.unbanUser(username);
         } else {
             return res.status(400).json({ error: 'Invalid action' });
         }

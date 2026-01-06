@@ -27,3 +27,4 @@ dist-ssr
 *.sw?
 server/users.json
 server/falsePositives.json
+server/tokens.json

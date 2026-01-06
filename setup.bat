@@ -19,48 +19,28 @@ if %ERRORLEVEL% NEQ 0 (
 echo Ollama model ready.
 echo.
 
-:: 2. Credentials
-echo [2/3] Configuring Twitch Credentials
-echo Please enter your Twitch Bot details.
-echo (You can get an OAuth token from https://twitchapps.com/tmi/)
+:: 2. Credentials & Config
+echo [2/3] Configuring Application...
 echo.
-
-echo.
-echo [!] IMPORTANT TOKEN INSTRUCTIONS [!]
-echo 1. Go to https://twitchtokengenerator.com/
-echo 2. Select "Bot Chat Token" or "Custom Scope Token"
-echo 3. Enable these specific scopes:
-echo    - chat:read
-echo    - chat:edit
-echo    - channel:moderate
-echo 4. Click "Generate Token" and Authorize.
-echo 5. Copy the "ACCESS TOKEN" (not Refresh Token, not Client ID).
-echo.
-
-set /p T_USER="Twitch Username (e.g. MyBotUser): "
-set /p T_CHANNEL="Target Channel (e.g. ninja -- just the name, NO URL): "
-set /p T_TOKEN="Access Token (e.g. oauth:xyz123...): "
-
-:: Write to .env
-echo Writing credentials to server/.env ...
-(
-echo TWITCH_USERNAME=%T_USER%
-echo TWITCH_OAUTH_TOKEN=%T_TOKEN%
-echo TWITCH_CHANNEL=%T_CHANNEL%
-echo PORT=3000
-echo OLLAMA_MODEL=gemma3:4b
-) > server/.env
+cd server
+if not exist node_modules (
+    echo Installing initial server dependencies needed for setup...
+    call npm install
+)
+echo Running interactive setup...
+call npm run setup
+if %ERRORLEVEL% NEQ 0 (
+    echo Setup failed or was cancelled.
+    pause
+    exit /b 1
+)
+cd ..
 
 echo.
 
 :: 3. Dependencies
-echo [3/3] Installing Dependencies...
-echo Server dependencies...
-cd server
-call npm install
-cd ..
+echo [3/3] Installing Client Dependencies...
 
-echo Client dependencies...
 cd client
 call npm install
 cd ..

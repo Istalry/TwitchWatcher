@@ -3,25 +3,19 @@ import { config } from '../config';
 import { historyStore } from '../store/history';
 import { actionQueue } from '../store/actionQueue';
 import { ollamaService } from './ollamaService';
+import { authService } from './authService';
 import crypto from 'crypto';
 
 export class TwitchBot {
-    private client: tmi.Client;
+    private client: tmi.Client | null = null;
 
     constructor() {
-        this.client = new tmi.Client({
-            options: { debug: true },
-            identity: {
-                username: config.twitch.username,
-                password: config.twitch.oauthToken,
-            },
-            channels: [config.twitch.channel],
-        });
-
-        this.setupListeners();
+        // Client is initialized in connect()
     }
 
     private setupListeners() {
+        if (!this.client) return;
+
         this.client.on('connected', (address, port) => {
             console.log(`Connected to ${address}:${port}`);
         });
@@ -39,8 +33,12 @@ export class TwitchBot {
         // store in history
         historyStore.addMessage(username, message);
 
-        // analyze
-        const analysis = await ollamaService.analyzeMessage(message);
+        // get user history for context
+        const user = historyStore.getUser(username);
+        const historyContext = user ? user.messages.map(m => `[${new Date(m.timestamp).toLocaleTimeString()}] ${m.content}`) : [];
+
+        // analyze with history
+        const analysis = await ollamaService.analyzeMessage(message, historyContext);
 
         if (analysis.flagged) {
             console.log(`FLAGGED [${username}]: ${message} (${analysis.reason})`);
@@ -58,6 +56,28 @@ export class TwitchBot {
 
     public async connect() {
         try {
+            const token = await authService.getToken();
+            if (!token) {
+                console.log('No valid Twitch token found. Waiting for authentication...');
+                console.log('Please visit http://localhost:3000/auth/twitch to login.');
+                return;
+            }
+
+            // Disconnect existing client if any (e.g. on re-auth)
+            if (this.client) {
+                try { await this.client.disconnect(); } catch (e) { /* ignore */ }
+            }
+
+            this.client = new tmi.Client({
+                options: { debug: true },
+                identity: {
+                    username: config.twitch.username,
+                    password: `oauth:${token}`,
+                },
+                channels: [config.twitch.channel],
+            });
+
+            this.setupListeners();
             await this.client.connect();
         } catch (err) {
             console.error('Failed to connect to Twitch:', err);
@@ -74,8 +94,10 @@ export class TwitchBot {
     }
 
     public async banUser(username: string, reason: string) {
+        if (!this.client) { console.error('Cannot ban user: Twitch client not connected'); return; }
         try {
             await this.client.ban(config.twitch.channel, username, reason);
+            historyStore.updateUserStatus(username, 'banned');
             console.log(`Banned ${username} for: ${reason}`);
         } catch (err) {
             console.error(`Failed to ban ${username}:`, err);
@@ -83,11 +105,24 @@ export class TwitchBot {
     }
 
     public async timeoutUser(username: string, duration: number, reason: string) {
+        if (!this.client) { console.error('Cannot timeout user: Twitch client not connected'); return; }
         try {
             await this.client.timeout(config.twitch.channel, username, duration, reason);
+            historyStore.updateUserStatus(username, 'timed_out');
             console.log(`Timed out ${username} for ${duration}s: ${reason}`);
         } catch (err) {
             console.error(`Failed to timeout ${username}:`, err);
+        }
+    }
+
+    public async unbanUser(username: string) {
+        if (!this.client) { console.error('Cannot unban user: Twitch client not connected'); return; }
+        try {
+            await this.client.unban(config.twitch.channel, username);
+            historyStore.updateUserStatus(username, 'active');
+            console.log(`Unbanned ${username}`);
+        } catch (err) {
+            console.error(`Failed to unban ${username}:`, err);
         }
     }
 }
