@@ -1,4 +1,5 @@
 import { Bug, Users, Zap, Settings as SettingsIcon } from 'lucide-react';
+import { NetworkQRCode } from './NetworkQRCode';
 
 interface SidebarProps {
     activeTab: 'actions' | 'users' | 'debug' | 'settings';
@@ -35,9 +36,13 @@ export function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
                     );
                 })}
             </nav>
+
+            <NetworkQRCode />
+
             <div className="p-4 text-xs text-zinc-600 font-mono text-center mb-4">
                 v1.0.0-beta
             </div>
         </aside>
     );
 }
+

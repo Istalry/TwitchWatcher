@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import os from 'os';
 import { config } from './config';
 import { twitchBot } from './services/twitchClient';
 import { historyStore } from './store/history';
@@ -142,6 +143,29 @@ app.post('/debug/message', async (req, res) => {
     // We need to access the handler. Since it's private in TwitchBot, let's expose a public method for debug.
     await twitchBot.simulateMessage(username, message);
     res.json({ success: true, message: 'Message simulated' });
+});
+
+// 10. System Network Info
+app.get('/system/network', (req, res) => {
+    const nets = os.networkInterfaces();
+    let localIp = 'localhost';
+
+    for (const name of Object.keys(nets)) {
+        for (const net of nets[name] || []) {
+            // Skip over non-IPv4 and internal (i.e. 127.0.0.1) addresses
+            // 'IPv4' is in Node <= 17, from 18 it's a number 4 or string FamilyV4
+            const familyV4Value = typeof net.family === 'string' ? 'IPv4' : 4;
+            if (net.family === familyV4Value && !net.internal) {
+                localIp = net.address;
+                // Prefer the first one found, typically WiFi or Ethernet
+                break;
+            }
+        }
+        if (localIp !== 'localhost') break;
+    }
+
+    // Fallback if no specific IP found (should rare on a connected machine)
+    res.json({ ip: localIp });
 });
 
 app.post('/debug/flag', (req, res) => {

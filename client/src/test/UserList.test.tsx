@@ -1,6 +1,6 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { UserList } from '../components/UserList';
-import { vi, describe, it, expect } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { type ChatUser } from '../types';
 
 const mockUsers: ChatUser[] = [

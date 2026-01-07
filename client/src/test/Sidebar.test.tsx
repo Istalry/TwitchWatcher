@@ -1,6 +1,12 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { Sidebar } from '../components/Sidebar';
-import { vi, describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+
+vi.stubGlobal('fetch', vi.fn(() =>
+    Promise.resolve({
+        json: () => Promise.resolve({ ip: '127.0.0.1' }),
+    })
+));
 
 describe('Sidebar', () => {
     it('renders all navigation tabs', () => {
