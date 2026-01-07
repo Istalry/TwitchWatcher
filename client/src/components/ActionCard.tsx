@@ -51,7 +51,7 @@ export function ActionCard({ action, onResolve }: ActionCardProps) {
                     </button>
 
                     <button
-                        onClick={() => onResolve(action.id, 'approved', '600')}
+                        onClick={() => onResolve(action.id, 'approved', '')}
                         className="flex-1 px-4 py-3 rounded-xl bg-orange-500/10 hover:bg-orange-500/20 text-orange-500 font-bold text-sm transition-all border border-orange-500/20 hover:border-orange-500/50"
                     >
                         Timeout

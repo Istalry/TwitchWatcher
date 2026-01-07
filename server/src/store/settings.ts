@@ -5,10 +5,12 @@ const SETTINGS_FILE = path.join(__dirname, '../../settings.json');
 
 export interface AppSettings {
     aiLanguage: string;
+    defaultTimeoutDuration: number;
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
-    aiLanguage: 'English'
+    aiLanguage: 'English',
+    defaultTimeoutDuration: 600
 };
 
 export class SettingsStore {

@@ -22,4 +22,5 @@ export interface PendingAction {
 
 export interface AppSettings {
     aiLanguage: string;
+    defaultTimeoutDuration: number;
 }

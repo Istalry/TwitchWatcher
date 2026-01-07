@@ -3,7 +3,7 @@ import { Save, Trash2, Globe } from 'lucide-react';
 import { type AppSettings } from '../types';
 
 export function Settings() {
-    const [settings, setSettings] = useState<AppSettings>({ aiLanguage: 'English' });
+    const [settings, setSettings] = useState<AppSettings>({ aiLanguage: 'English', defaultTimeoutDuration: 600 });
     const [isLoading, setIsLoading] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
 
@@ -86,6 +86,20 @@ export function Settings() {
                             </button>
                         </div>
                         <p className="text-xs text-zinc-600 mt-3 font-medium">The AI will use this language for providing moderation reasons.</p>
+                    </div>
+
+                    <div>
+                        <label className="block text-xs uppercase text-zinc-500 mb-3 font-black tracking-widest ml-1">Default Timeout Duration (Seconds)</label>
+                        <div className="flex gap-4">
+                            <input
+                                type="number"
+                                className="flex-1 bg-zinc-800 border-2 border-transparent rounded-xl p-5 text-white font-bold focus:border-zinc-600 focus:outline-none transition-all placeholder:text-zinc-600 shadow-inner"
+                                value={settings.defaultTimeoutDuration || 600}
+                                onChange={e => setSettings({ ...settings, defaultTimeoutDuration: parseInt(e.target.value) || 0 })}
+                                placeholder="600"
+                            />
+                        </div>
+                        <p className="text-xs text-zinc-600 mt-3 font-medium">Duration in seconds for timeout actions (default 600s = 10m).</p>
                     </div>
                 </div>
             </div>

@@ -93,8 +93,8 @@ app.post('/actions/:id/resolve', async (req, res) => {
             await twitchBot.banUser(action.username, `Moderated: ${action.flaggedReason}`);
             historyStore.updateUserStatus(action.username, 'banned');
         } else {
-            // Default to 10m (600s) if not specified or parsed
-            const duration = parseInt(banDuration) || 600;
+            // Default to settings value if not specified or parsed
+            const duration = parseInt(banDuration) || settingsStore.get().defaultTimeoutDuration || 600;
             await twitchBot.timeoutUser(action.username, duration, `Moderated: ${action.flaggedReason}`);
             historyStore.updateUserStatus(action.username, 'timed_out');
         }
@@ -115,7 +115,8 @@ app.post('/users/:username/moderate', async (req, res) => {
             await twitchBot.banUser(username, 'Manual Ban');
             // historyStore.updateUserStatus is called inside twitchBot.banUser now, but we'll keep it consistent
         } else if (action === 'timeout') {
-            await twitchBot.timeoutUser(username, 600, 'Manual Timeout');
+            const duration = settingsStore.get().defaultTimeoutDuration || 600;
+            await twitchBot.timeoutUser(username, duration, 'Manual Timeout');
         } else if (action === 'unban') {
             await twitchBot.unbanUser(username);
         } else {
@@ -188,9 +189,13 @@ app.get('/settings', (req, res) => {
 });
 
 app.post('/settings', (req, res) => {
-    const { aiLanguage } = req.body;
-    if (aiLanguage) {
-        settingsStore.update({ aiLanguage });
+    const { aiLanguage, defaultTimeoutDuration } = req.body;
+    const update: Partial<any> = {};
+    if (aiLanguage) update.aiLanguage = aiLanguage;
+    if (defaultTimeoutDuration) update.defaultTimeoutDuration = Number(defaultTimeoutDuration);
+
+    if (Object.keys(update).length > 0) {
+        settingsStore.update(update);
     }
     res.json({ success: true, settings: settingsStore.get() });
 });
