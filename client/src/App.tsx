@@ -50,16 +50,20 @@ function App() {
     return () => clearInterval(interval);
   }, []);
 
-  const handleResolve = async (id: string, resolution: 'approved' | 'discarded', banDuration?: string) => {
+  const handleResolve = async (ids: string[], resolution: 'approved' | 'discarded', banDuration?: string) => {
     try {
-      await fetch(`/api/actions/${id}/resolve`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ resolution, banDuration })
-      });
-      setActions(prev => prev.filter(a => a.id !== id));
+      // Resolve all actions sequentially
+      await Promise.all(ids.map(id =>
+        fetch(`/api/actions/${id}/resolve`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ resolution, banDuration })
+        })
+      ));
+
+      setActions(prev => prev.filter(a => !ids.includes(a.id)));
     } catch (err) {
-      console.error('Failed to resolve action', err);
+      console.error('Failed to resolve actions', err);
     }
   };
 
@@ -121,6 +125,17 @@ function App() {
     );
   }
 
+  // Group actions by username
+  const groupedActions = actions.reduce((acc, action) => {
+    if (!acc[action.username]) {
+      acc[action.username] = [];
+    }
+    acc[action.username].push(action);
+    return acc;
+  }, {} as Record<string, PendingAction[]>);
+
+  const actionGroups = Object.values(groupedActions);
+
   return (
     <div className="min-h-screen w-full bg-[#09090b] text-white font-inter flex relative overflow-hidden">
       <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
@@ -152,12 +167,12 @@ function App() {
                         Action Required
                       </h2>
                       <div className="bg-red-500 text-white px-5 py-2 rounded-full text-sm font-black uppercase tracking-widest shadow-[0_0_15px_rgba(239,68,68,0.5)]">
-                        {actions.length} Pending
+                        {actions.length} Pending ({actionGroups.length} Users)
                       </div>
                     </div>
                     <div className="space-y-6">
-                      {actions.map(action => (
-                        <ActionCard key={action.id} action={action} onResolve={handleResolve} />
+                      {actionGroups.map((group) => (
+                        <ActionCard key={group[0].username} actions={group} onResolve={handleResolve} />
                       ))}
                     </div>
                   </>

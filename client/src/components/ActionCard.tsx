@@ -2,11 +2,20 @@ import { motion } from 'framer-motion';
 import { type PendingAction } from '../types';
 
 interface ActionCardProps {
-    action: PendingAction;
-    onResolve: (id: string, resolution: 'approved' | 'discarded', banDuration?: string) => void;
+    actions: PendingAction[];
+    onResolve: (ids: string[], resolution: 'approved' | 'discarded', banDuration?: string) => void;
 }
 
-export function ActionCard({ action, onResolve }: ActionCardProps) {
+export function ActionCard({ actions, onResolve }: ActionCardProps) {
+    if (actions.length === 0) return null;
+
+    // Use the first action for common details (username, etc.)
+    const mainAction = actions[0];
+    const actionIds = actions.map(a => a.id);
+
+    // Aggregate reasons
+    const distinctReasons = Array.from(new Set(actions.map(a => a.flaggedReason)));
+
     return (
         <motion.div
             layout
@@ -24,44 +33,64 @@ export function ActionCard({ action, onResolve }: ActionCardProps) {
                     <div className="flex items-center justify-between mb-4">
                         <div className="flex items-center gap-3">
                             <div className="w-10 h-10 rounded-lg bg-red-500/10 flex items-center justify-center text-red-500 font-bold border border-red-500/20">
-                                {action.username[0].toUpperCase()}
+                                {mainAction.username[0].toUpperCase()}
                             </div>
                             <div>
-                                <h3 className="text-white font-bold text-lg leading-tight">{action.username}</h3>
-                                <div className="text-red-400 text-xs uppercase tracking-wider font-bold">{action.flaggedReason}</div>
+                                <h3 className="text-white font-bold text-lg leading-tight">{mainAction.username}</h3>
+                                <div className="flex flex-wrap gap-2 mt-1">
+                                    {distinctReasons.map((reason, i) => (
+                                        <div key={i} className="text-red-400 text-xs uppercase tracking-wider font-bold bg-red-500/5 px-2 py-0.5 rounded">
+                                            {reason}
+                                        </div>
+                                    ))}
+                                    {actions.length > 1 && (
+                                        <div className="text-zinc-500 text-xs uppercase tracking-wider font-bold bg-zinc-800 px-2 py-0.5 rounded border border-zinc-700">
+                                            {actions.length} Messages
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         </div>
                         <div className="text-xs font-mono text-zinc-600 border border-zinc-800 px-2 py-1 rounded">
-                            ID: {action.id.slice(0, 6)}
+                            {actions.length > 1 ? `${actions.length} ITEMS` : `ID: ${mainAction.id.slice(0, 6)}`}
                         </div>
                     </div>
 
-                    <div className="bg-[#09090b] p-4 rounded-xl border border-white/5 relative">
-                        <div className="absolute top-0 left-0 w-1 h-full bg-red-500/20 rounded-l-xl" />
-                        <p className="text-zinc-300 text-base leading-relaxed pl-3 font-medium">"{action.messageContent}"</p>
+                    <div className="space-y-3">
+                        {actions.map((action) => (
+                            <div key={action.id} className="bg-[#09090b] p-4 rounded-xl border border-white/5 relative">
+                                <div className="absolute top-0 left-0 w-1 h-full bg-red-500/20 rounded-l-xl" />
+                                <div className="flex justify-between items-start gap-4">
+                                    <p className="text-zinc-300 text-base leading-relaxed pl-3 font-medium">"{action.messageContent}"</p>
+                                    <span className="text-[10px] text-zinc-600 font-mono whitespace-nowrap pt-1">
+                                        {new Date(action.timestamp).toLocaleTimeString()}
+                                    </span>
+                                </div>
+                            </div>
+                        ))}
                     </div>
                 </div>
 
                 <div className="flex md:flex-col gap-3 justify-center min-w-[140px]">
                     <button
-                        onClick={() => onResolve(action.id, 'discarded')}
+                        onClick={() => onResolve(actionIds, 'discarded')}
                         className="flex-1 px-4 py-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white font-bold text-sm transition-all border border-transparent hover:border-zinc-600"
                     >
-                        Dismiss
+                        Dismiss All
                     </button>
 
                     <button
-                        onClick={() => onResolve(action.id, 'approved', '')}
+                        onClick={() => onResolve(actionIds, 'approved', '')}
                         className="flex-1 px-4 py-3 rounded-xl bg-orange-500/10 hover:bg-orange-500/20 text-orange-500 font-bold text-sm transition-all border border-orange-500/20 hover:border-orange-500/50"
                     >
                         Timeout
                     </button>
 
                     <button
-                        onClick={() => onResolve(action.id, 'approved', 'permanent')}
+                        onClick={() => onResolve(actionIds, 'approved', 'permanent')}
                         className="flex-1 px-4 py-3 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-500 font-bold text-sm transition-all border border-red-500/20 hover:border-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.1)] hover:shadow-[0_0_20px_rgba(239,68,68,0.2)]"
                     >
-                        BAN
+                        BAN USER
                     </button>
                 </div>
             </div>
