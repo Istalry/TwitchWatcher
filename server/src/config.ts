@@ -12,8 +12,10 @@ export const config = {
     server: {
         port: parseInt(process.env.PORT || '3000', 10),
     },
-    ollama: {
-        model: process.env.OLLAMA_MODEL || 'gemma3:4b',
+    ai: {
+        provider: (process.env.AI_PROVIDER || 'ollama') as 'ollama' | 'google',
+        apiKey: process.env.GOOGLE_API_KEY || '',
+        model: process.env.AI_MODEL || (process.env.AI_PROVIDER === 'google' ? 'gemma-2-27b-it' : 'gemma3:4b'),
     },
 };
 

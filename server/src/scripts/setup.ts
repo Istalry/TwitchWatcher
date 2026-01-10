@@ -43,8 +43,58 @@ const setup = async () => {
     const clientId = await question(`Client ID (${currentConfig.TWITCH_CLIENT_ID || ''}): `) || currentConfig.TWITCH_CLIENT_ID;
     const clientSecret = await question(`Client Secret (${currentConfig.TWITCH_CLIENT_SECRET || ''}): `) || currentConfig.TWITCH_CLIENT_SECRET;
 
+    const aiProvider = await question(`AI Provider (ollama/google) [default: ollama]: `) || currentConfig.AI_PROVIDER || 'ollama';
+    let apiKey = '';
+    let aiModel = '';
+
+    if (aiProvider === 'google') {
+        apiKey = await question(`Google AI Studio API Key (${currentConfig.GOOGLE_API_KEY ? '*****' : 'Required'}): `) || currentConfig.GOOGLE_API_KEY;
+
+        if (!apiKey) {
+            console.error('\n[!] Error: Google API Key is required when using Google provider.\n');
+            process.exit(1);
+        }
+
+        // Fetch available models
+        console.log('Fetching available models from Google AI Studio...');
+        try {
+            const { default: axios } = await import('axios');
+            const res = await axios.get(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+            const models = (res.data.models || [])
+                .filter((m: any) => m.supportedGenerationMethods?.includes('generateContent'))
+                .map((m: any) => m.name.replace('models/', ''));
+
+            if (models.length > 0) {
+                console.log('\nAvailable Models:');
+                models.forEach((m: string, i: number) => console.log(`${i + 1}. ${m}`));
+
+                const selection = await question(`\nSelect Model (1-${models.length}) [default: gemma-3-27b-it]: `);
+                if (selection && parseInt(selection) > 0 && parseInt(selection) <= models.length) {
+                    aiModel = models[parseInt(selection) - 1];
+                } else {
+                    aiModel = models.find((m: string) => m.includes('gemma-3-27b-it')) || models[0];
+                }
+                console.log(`Selected: ${aiModel}`);
+            } else {
+                console.log('No models found, using default.');
+                aiModel = await question(`Google AI Model [default: gemma-3-27b-it]: `) || currentConfig.AI_MODEL || 'gemma-3-27b-it';
+            }
+        } catch (err: any) {
+            console.error('Failed to list models:', err.message);
+            aiModel = await question(`Google AI Model [default: gemma-3-27b-it]: `) || currentConfig.AI_MODEL || 'gemma-3-27b-it';
+        }
+
+    } else {
+        aiModel = await question(`Ollama Model [default: gemma3:4b]: `) || currentConfig.AI_MODEL || 'gemma3:4b';
+    }
+
     if (!username || !channel || !clientId || !clientSecret) {
-        console.error('\n[!] Error: All fields are required to continue.\n');
+        console.error('\n[!] Error: Twitch credentials are required.\n');
+        process.exit(1);
+    }
+
+    if (aiProvider === 'google' && !apiKey) {
+        console.error('\n[!] Error: Google API Key is required when using Google provider.\n');
         process.exit(1);
     }
 
@@ -55,7 +105,9 @@ TWITCH_CLIENT_ID=${clientId}
 TWITCH_CLIENT_SECRET=${clientSecret}
 TWITCH_REDIRECT_URI=http://localhost:3000/auth/twitch/callback
 PORT=3000
-OLLAMA_MODEL=gemma3:4b
+AI_PROVIDER=${aiProvider}
+AI_MODEL=${aiModel}
+GOOGLE_API_KEY=${apiKey}
 `.trim();
 
     fs.writeFileSync(ENV_PATH, envContent);

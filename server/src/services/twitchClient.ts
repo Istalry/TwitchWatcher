@@ -3,7 +3,7 @@ import axios from 'axios';
 import { config } from '../config';
 import { historyStore } from '../store/history';
 import { actionQueue } from '../store/actionQueue';
-import { ollamaService } from './ollamaService';
+import { analysisQueue } from './analysisQueue';
 import { authService } from './authService';
 import crypto from 'crypto';
 
@@ -40,20 +40,9 @@ export class TwitchBot {
         const historyContext = user ? user.messages.map(m => `[${new Date(m.timestamp).toLocaleTimeString()}] ${m.content}`) : [];
 
         // analyze with history
-        const analysis = await ollamaService.analyzeMessage(message, historyContext);
 
-        if (analysis.flagged) {
-            console.log(`FLAGGED [${username}]: ${message} (${analysis.reason})`);
-            actionQueue.add({
-                id: crypto.randomUUID(),
-                username,
-                messageContent: message,
-                flaggedReason: analysis.reason || 'Unknown',
-                suggestedAction: analysis.suggestedAction === 'ban' ? 'ban' : 'timeout',
-                timestamp: Date.now(),
-                status: 'pending'
-            });
-        }
+        // analyze via queue (async)
+        analysisQueue.add(username, message);
     }
 
     public async connect() {
