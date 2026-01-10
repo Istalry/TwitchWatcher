@@ -1,8 +1,12 @@
 import { ChatUser, ChatMessage } from './types';
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 
-const DATA_FILE = path.join(__dirname, '../../users.json');
+// Determine root directory (handle pkg vs dev)
+const isPkg = (process as any).pkg;
+const ROOT_DIR = isPkg ? path.dirname(process.execPath) : path.join(__dirname, '../../');
+const DATA_FILE = path.join(ROOT_DIR, 'users.json');
 
 export class HistoryStore {
     private users: Map<string, ChatUser> = new Map();

@@ -1,5 +1,5 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { config } from '../../config';
+import { settingsStore } from '../../store/settings';
 import { ModerationResult } from '../../store/types';
 import { AIProvider } from './aiProvider';
 import { buildModerationPrompt } from './promptBuilder';
@@ -9,16 +9,15 @@ export class GoogleProvider implements AIProvider {
     private model: any;
 
     constructor() {
-        if (config.ai.apiKey) {
-            this.genAI = new GoogleGenerativeAI(config.ai.apiKey);
+        const settings = settingsStore.get().ai;
+        if (settings.apiKey) {
+            this.genAI = new GoogleGenerativeAI(settings.apiKey);
             this.model = this.genAI.getGenerativeModel({
-                model: config.ai.model,
-                // NOTE: We do not enforce responseMimeType: "application/json" here because some models 
-                // (like gemma-2/3) do not support it and return 400 Bad Request.
-                // We rely on the prompt to request JSON and manual parsing below.
+                model: settings.model,
+                // NOTE: gemma-2/3 models may not support JSON mode natively via valid API
             });
         } else {
-            console.warn('GoogleProvider specificed but no API Key provided.');
+            console.warn('GoogleProvider used but no API Key provided in settings.');
         }
     }
 

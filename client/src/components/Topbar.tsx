@@ -2,9 +2,10 @@ import { Power } from 'lucide-react';
 
 interface TopbarProps {
     onShutdown: () => void;
+    isConnected: boolean;
 }
 
-export function Topbar({ onShutdown }: TopbarProps) {
+export function Topbar({ onShutdown, isConnected }: TopbarProps) {
     return (
         <header className="h-16 fixed top-0 right-0 left-0 md:left-64 bg-[#09090b]/80 backdrop-blur-xl border-b border-[#27272a] z-20 flex items-center justify-between px-8">
             <div className="flex items-center gap-4">
@@ -14,10 +15,17 @@ export function Topbar({ onShutdown }: TopbarProps) {
             </div>
 
             <div className="flex items-center gap-4">
-                <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-green-500/10 border border-green-500/20">
-                    <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                    <span className="text-xs font-bold text-green-500 uppercase tracking-wider">System Online</span>
-                </div>
+                {isConnected ? (
+                    <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-green-500/10 border border-green-500/20">
+                        <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                        <span className="text-xs font-bold text-green-500 uppercase tracking-wider">System Online</span>
+                    </div>
+                ) : (
+                    <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-red-500/10 border border-red-500/20">
+                        <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                        <span className="text-xs font-bold text-red-500 uppercase tracking-wider">Disconnected</span>
+                    </div>
+                )}
 
                 <div className="h-8 w-[1px] bg-white/10 mx-2" />
 

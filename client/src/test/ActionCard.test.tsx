@@ -16,7 +16,7 @@ const mockAction: PendingAction = {
 describe('ActionCard', () => {
     it('renders usage information correctly', () => {
         const mockFn = vi.fn();
-        render(<ActionCard action={mockAction} onResolve={mockFn} />);
+        render(<ActionCard actions={[mockAction]} onResolve={mockFn} />);
 
         expect(screen.getByText('baduser')).toBeInTheDocument();
         expect(screen.getByText('Hate Speech')).toBeInTheDocument();
@@ -25,12 +25,12 @@ describe('ActionCard', () => {
 
     it('triggers resolve callback on button click', () => {
         const mockFn = vi.fn();
-        render(<ActionCard action={mockAction} onResolve={mockFn} />);
+        render(<ActionCard actions={[mockAction]} onResolve={mockFn} />);
 
-        fireEvent.click(screen.getByText('Dismiss'));
-        expect(mockFn).toHaveBeenCalledWith('123', 'discarded');
+        fireEvent.click(screen.getByText('Dismiss All'));
+        expect(mockFn).toHaveBeenCalledWith(['123'], 'discarded');
 
-        fireEvent.click(screen.getByText('BAN'));
-        expect(mockFn).toHaveBeenCalledWith('123', 'approved', 'permanent');
+        fireEvent.click(screen.getByText('BAN USER'));
+        expect(mockFn).toHaveBeenCalledWith(['123'], 'approved', 'permanent');
     });
 });

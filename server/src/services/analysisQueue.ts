@@ -1,9 +1,7 @@
-import { config } from '../config';
+
 import { historyStore } from '../store/history';
 import { actionQueue } from '../store/actionQueue';
-import { AIProvider } from './ai/aiProvider';
-import { OllamaProvider } from './ai/ollamaProvider';
-import { GoogleProvider } from './ai/googleProvider';
+import { aiService } from './ai/aiService';
 import crypto from 'crypto';
 
 class AnalysisQueue {
@@ -11,18 +9,10 @@ class AnalysisQueue {
     private queueOrder: string[] = []; // Maintain order of users
     private processing: boolean = false;
     private lastProcessTime: number = 0;
-    private provider: AIProvider;
     private interval: NodeJS.Timeout | null = null;
 
     constructor() {
-        // Initialize provider based on config
-        if (config.ai.provider === 'google') {
-            this.provider = new GoogleProvider();
-        } else {
-            this.provider = new OllamaProvider();
-        }
-
-        console.log(`AnalysisQueue initialized with provider: ${config.ai.provider} (${config.ai.model})`);
+        console.log('AnalysisQueue initialized using aiService.');
         this.start();
     }
 
@@ -84,7 +74,7 @@ class AnalysisQueue {
             const historyContext = user ? user.messages.map(m => `[${new Date(m.timestamp).toLocaleTimeString()}] ${m.content}`) : [];
 
             // Run analysis
-            const analysis = await this.provider.analyzeMessage(textToAnalyze, historyContext);
+            const analysis = await aiService.analyzeMessage(textToAnalyze, historyContext);
 
             if (analysis.flagged) {
                 console.log(`FLAGGED [${username}]: ${textToAnalyze} (${analysis.reason})`);

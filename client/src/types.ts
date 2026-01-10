@@ -21,6 +21,20 @@ export interface PendingAction {
 }
 
 export interface AppSettings {
+    isSetupComplete: boolean;
     aiLanguage: string;
     defaultTimeoutDuration: number;
+    twitch: {
+        username: string;
+        channel: string;
+        clientId: string;
+        clientSecret: string;
+        accessToken?: string;
+        refreshToken?: string;
+    };
+    ai: {
+        provider: 'ollama' | 'google';
+        model: string;
+        apiKey?: string;
+    };
 }

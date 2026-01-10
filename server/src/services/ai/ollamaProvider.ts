@@ -1,5 +1,5 @@
 import { Ollama } from 'ollama';
-import { config } from '../../config';
+import { settingsStore } from '../../store/settings';
 import { ModerationResult } from '../../store/types';
 import { AIProvider } from './aiProvider';
 import { buildModerationPrompt } from './promptBuilder';
@@ -12,13 +12,14 @@ export class OllamaProvider implements AIProvider {
     }
 
     public async analyzeMessage(message: string, history: string[] = []): Promise<ModerationResult> {
+        const settings = settingsStore.get();
         try {
             const prompt = buildModerationPrompt(message, history);
             console.log('--- Sending to Ollama ---');
             console.log(prompt);
 
             const response = await this.ollama.chat({
-                model: config.ai.model,
+                model: settings.ai.model,
                 messages: [{ role: 'user', content: prompt }],
                 format: 'json',
             });

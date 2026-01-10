@@ -4,17 +4,21 @@ import { UserList } from './components/UserList';
 import { Sidebar } from './components/Sidebar';
 import { Topbar } from './components/Topbar';
 import { Settings } from './components/Settings';
+import { SetupPage } from './components/SetupPage'; // Import SetupPage
 import { type PendingAction, type ChatUser } from './types';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Bug } from 'lucide-react';
-import { Power } from 'lucide-react'; // Keeping for shutdown screen
+import { Power } from 'lucide-react';
 import './styles/neo.css';
 
 function App() {
+  const [isSetupComplete, setIsSetupComplete] = useState<boolean | null>(null); // null = loading
   const [activeTab, setActiveTab] = useState<'actions' | 'users' | 'debug' | 'settings'>('actions');
   const [actions, setActions] = useState<PendingAction[]>([]);
   const [users, setUsers] = useState<ChatUser[]>([]);
   const [isShuttingDown, setIsShuttingDown] = useState(false);
+
+  const [isTwitchConnected, setIsTwitchConnected] = useState(false);
 
   // Debug State
   const [debugUser, setDebugUser] = useState('TrollUser');
@@ -23,20 +27,34 @@ function App() {
 
   const shutdownRef = useRef(false);
 
+  // Check setup status first
+  useEffect(() => {
+    fetch('/api/setup/status')
+      .then(res => res.json())
+      .then(data => {
+        setIsSetupComplete(data.isSetupComplete);
+      })
+      .catch(() => setIsSetupComplete(false)); // Assume false if fail
+  }, []);
+
   const fetchData = async () => {
-    if (shutdownRef.current) return;
+    if (shutdownRef.current || isSetupComplete === false) return;
     try {
-      const [actionRes, userRes] = await Promise.all([
+      const [actionRes, userRes, statusRes] = await Promise.all([
         fetch('/api/actions'),
-        fetch('/api/users')
+        fetch('/api/users'),
+        fetch('/api/twitch/status')
       ]);
 
       if (!actionRes.ok || !userRes.ok) throw new Error('Network response was not ok');
 
       const actionData = await actionRes.json();
       const userData = await userRes.json();
+      const statusData = await statusRes.json(); // May fail if not implemented yet, so careful? No we implemented it.
+
       setActions(actionData);
       setUsers(userData);
+      setIsTwitchConnected(statusData.connected);
     } catch (err) {
       if (!shutdownRef.current) {
         console.error("Failed to fetch data", err);
@@ -45,10 +63,20 @@ function App() {
   };
 
   useEffect(() => {
-    fetchData();
-    const interval = setInterval(fetchData, 2000);
-    return () => clearInterval(interval);
-  }, []);
+    if (isSetupComplete) {
+      fetchData();
+      const interval = setInterval(fetchData, 2000);
+      return () => clearInterval(interval);
+    }
+  }, [isSetupComplete]);
+
+  if (isSetupComplete === null) {
+    return <div className="min-h-screen bg-[#09090b] flex items-center justify-center text-white">Loading...</div>;
+  }
+
+  if (isSetupComplete === false) {
+    return <SetupPage onComplete={() => setIsSetupComplete(true)} />;
+  }
 
   const handleResolve = async (ids: string[], resolution: 'approved' | 'discarded', banDuration?: string) => {
     try {
@@ -141,7 +169,7 @@ function App() {
       <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
 
       <div className="flex-1 flex flex-col md:ml-64 relative">
-        <Topbar onShutdown={handleShutdown} />
+        <Topbar onShutdown={handleShutdown} isConnected={isTwitchConnected} />
 
         <main className="flex-1 p-8 pt-24 overflow-y-auto custom-scrollbar relative z-0">
           <AnimatePresence mode="wait">

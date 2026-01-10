@@ -1,6 +1,6 @@
 import tmi from 'tmi.js';
 import axios from 'axios';
-import { config } from '../config';
+import { settingsStore } from '../store/settings';
 import { historyStore } from '../store/history';
 import { actionQueue } from '../store/actionQueue';
 import { analysisQueue } from './analysisQueue';
@@ -37,20 +37,25 @@ export class TwitchBot {
 
         // get user history for context
         const user = historyStore.getUser(username);
-        const historyContext = user ? user.messages.map(m => `[${new Date(m.timestamp).toLocaleTimeString()}] ${m.content}`) : [];
 
-        // analyze with history
-
-        // analyze via queue (async)
+        // Add to analysis queue (async)
         analysisQueue.add(username, message);
     }
 
     public async connect() {
         try {
+            const settings = settingsStore.get().twitch;
+
+            // If setup not complete or missing credentials, don't crash, just log and wait
+            if (!settings.username || !settings.channel) {
+                console.log('Twitch settings missing. Waiting for setup...');
+                return;
+            }
+
             const token = await authService.getToken();
             if (!token) {
                 console.log('No valid Twitch token found. Waiting for authentication...');
-                console.log('Please visit http://localhost:3000/auth/twitch to login.');
+                // We rely on the Frontend Setup/Auth flow now.
                 return;
             }
 
@@ -62,17 +67,17 @@ export class TwitchBot {
             this.client = new tmi.Client({
                 options: { debug: true },
                 identity: {
-                    username: config.twitch.username,
+                    username: settings.username,
                     password: `oauth:${token}`,
                 },
-                channels: [config.twitch.channel],
+                channels: [settings.channel],
             });
 
             this.setupListeners();
             await this.client.connect();
 
             // Fetch our own ID (Broadcaster ID)
-            const selfData = await this.getHelixUser(config.twitch.username);
+            const selfData = await this.getHelixUser(settings.username);
             if (selfData) {
                 this.broadcasterId = selfData.id;
                 console.log(`Authenticated as ${selfData.display_name} (ID: ${this.broadcasterId})`);
@@ -86,10 +91,11 @@ export class TwitchBot {
         try {
             const token = await authService.getToken();
             if (!token) return null;
+            const settings = settingsStore.get().twitch;
 
             const res = await axios.get(`https://api.twitch.tv/helix/users?login=${username}`, {
                 headers: {
-                    'Client-ID': config.twitch.clientId,
+                    'Client-ID': settings.clientId,
                     'Authorization': `Bearer ${token}`
                 }
             });
@@ -118,6 +124,8 @@ export class TwitchBot {
             if (!targetUser) { console.error(`Cannot ban: User ${username} not found`); return; }
 
             const token = await authService.getToken();
+            const settings = settingsStore.get().twitch;
+
             await axios.post(`https://api.twitch.tv/helix/moderation/bans?broadcaster_id=${this.broadcasterId}&moderator_id=${this.broadcasterId}`,
                 {
                     data: {
@@ -127,7 +135,7 @@ export class TwitchBot {
                 },
                 {
                     headers: {
-                        'Client-ID': config.twitch.clientId,
+                        'Client-ID': settings.clientId,
                         'Authorization': `Bearer ${token}`,
                         'Content-Type': 'application/json'
                     }
@@ -149,6 +157,8 @@ export class TwitchBot {
             if (!targetUser) { console.error(`Cannot timeout: User ${username} not found`); return; }
 
             const token = await authService.getToken();
+            const settings = settingsStore.get().twitch;
+
             await axios.post(`https://api.twitch.tv/helix/moderation/bans?broadcaster_id=${this.broadcasterId}&moderator_id=${this.broadcasterId}`,
                 {
                     data: {
@@ -159,7 +169,7 @@ export class TwitchBot {
                 },
                 {
                     headers: {
-                        'Client-ID': config.twitch.clientId,
+                        'Client-ID': settings.clientId,
                         'Authorization': `Bearer ${token}`,
                         'Content-Type': 'application/json'
                     }
@@ -181,10 +191,12 @@ export class TwitchBot {
             if (!targetUser) { console.error(`Cannot unban: User ${username} not found`); return; }
 
             const token = await authService.getToken();
+            const settings = settingsStore.get().twitch;
+
             await axios.delete(`https://api.twitch.tv/helix/moderation/bans?broadcaster_id=${this.broadcasterId}&moderator_id=${this.broadcasterId}&user_id=${targetUser.id}`,
                 {
                     headers: {
-                        'Client-ID': config.twitch.clientId,
+                        'Client-ID': settings.clientId,
                         'Authorization': `Bearer ${token}`
                     }
                 }
@@ -195,6 +207,9 @@ export class TwitchBot {
         } catch (err: any) {
             console.error(`Failed to unban ${username}:`, err.response?.data || err.message);
         }
+    }
+    public get isConnected(): boolean {
+        return this.client?.readyState() === 'OPEN';
     }
 }
 

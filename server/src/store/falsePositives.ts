@@ -1,7 +1,10 @@
 import fs from 'fs';
 import path from 'path';
 
-const FP_FILE = path.join(__dirname, '../../falsePositives.json');
+// Determine root directory (handle pkg vs dev)
+const isPkg = (process as any).pkg;
+const ROOT_DIR = isPkg ? path.dirname(process.execPath) : path.join(__dirname, '../../');
+const FP_FILE = path.join(ROOT_DIR, 'falsePositives.json');
 
 export class FalsePositiveStore {
     private examples: string[] = [];

@@ -28,3 +28,11 @@ dist-ssr
 server/users.json
 server/falsePositives.json
 server/tokens.json
+server/settings.json
+
+# Build Artifacts
+server/dist
+server/public
+client/dist
+*.exe
+server/settings.json
