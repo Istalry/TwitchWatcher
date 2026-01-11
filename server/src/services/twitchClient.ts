@@ -9,7 +9,8 @@ import crypto from 'crypto';
 
 export class TwitchBot {
     private client: tmi.Client | null = null;
-    private broadcasterId: string | null = null;
+    private broadcasterId: string | null = null; // Channel Owner
+    private moderatorId: string | null = null;   // Bot Account (Token Owner)
 
     constructor() {
         // Client is initialized in connect()
@@ -76,24 +77,41 @@ export class TwitchBot {
             this.setupListeners();
             await this.client.connect();
 
-            // Fetch our own ID (Broadcaster ID)
-            const selfData = await this.getHelixUser(settings.username);
-            if (selfData) {
-                this.broadcasterId = selfData.id;
-                console.log(`Authenticated as ${selfData.display_name} (ID: ${this.broadcasterId})`);
+            // 1. Fetch "Me" (Token Owner => Moderator ID)
+            const meData = await this.getHelixUser(); // No params = get self
+            if (meData) {
+                this.moderatorId = meData.id;
+                console.log(`Authenticated as ${meData.display_name} (Moderator ID: ${this.moderatorId})`);
+            }
+
+            // 2. Fetch "Channel" (Broadcaster ID)
+            if (settings.channel) {
+                // Channel name usually doesn't have # in API calls, but settings might
+                const channelName = settings.channel.replace('#', '');
+                const channelData = await this.getHelixUser(channelName);
+                if (channelData) {
+                    this.broadcasterId = channelData.id;
+                    console.log(`Serving channel ${channelData.display_name} (Broadcaster ID: ${this.broadcasterId})`);
+                }
             }
         } catch (err) {
             console.error('Failed to connect to Twitch:', err);
         }
     }
 
-    private async getHelixUser(username: string) {
+    // Pass nothing to get "Me", pass username to lookup someone else
+    private async getHelixUser(username?: string) {
         try {
             const token = await authService.getToken();
             if (!token) return null;
             const settings = settingsStore.get().twitch;
 
-            const res = await axios.get(`https://api.twitch.tv/helix/users?login=${username}`, {
+            let url = 'https://api.twitch.tv/helix/users';
+            if (username) {
+                url += `?login=${username}`;
+            }
+
+            const res = await axios.get(url, {
                 headers: {
                     'Client-ID': settings.clientId,
                     'Authorization': `Bearer ${token}`
@@ -102,7 +120,7 @@ export class TwitchBot {
 
             return res.data.data[0] || null;
         } catch (err) {
-            console.error(`Failed to lookup user ${username}:`, err);
+            console.error(`Failed to lookup user ${username || 'self'}:`, err);
             return null;
         }
     }
@@ -117,7 +135,7 @@ export class TwitchBot {
     }
 
     public async banUser(username: string, reason: string) {
-        if (!this.broadcasterId) { console.error('Cannot ban: Broadcaster ID unknown'); return; }
+        if (!this.broadcasterId || !this.moderatorId) { console.error('Cannot ban: IDs unknown'); return; }
 
         try {
             const targetUser = await this.getHelixUser(username);
@@ -126,7 +144,7 @@ export class TwitchBot {
             const token = await authService.getToken();
             const settings = settingsStore.get().twitch;
 
-            await axios.post(`https://api.twitch.tv/helix/moderation/bans?broadcaster_id=${this.broadcasterId}&moderator_id=${this.broadcasterId}`,
+            await axios.post(`https://api.twitch.tv/helix/moderation/bans?broadcaster_id=${this.broadcasterId}&moderator_id=${this.moderatorId}`,
                 {
                     data: {
                         user_id: targetUser.id,
@@ -150,7 +168,7 @@ export class TwitchBot {
     }
 
     public async timeoutUser(username: string, duration: number, reason: string) {
-        if (!this.broadcasterId) { console.error('Cannot timeout: Broadcaster ID unknown'); return; }
+        if (!this.broadcasterId || !this.moderatorId) { console.error('Cannot timeout: IDs unknown'); return; }
 
         try {
             const targetUser = await this.getHelixUser(username);
@@ -159,7 +177,7 @@ export class TwitchBot {
             const token = await authService.getToken();
             const settings = settingsStore.get().twitch;
 
-            await axios.post(`https://api.twitch.tv/helix/moderation/bans?broadcaster_id=${this.broadcasterId}&moderator_id=${this.broadcasterId}`,
+            await axios.post(`https://api.twitch.tv/helix/moderation/bans?broadcaster_id=${this.broadcasterId}&moderator_id=${this.moderatorId}`,
                 {
                     data: {
                         user_id: targetUser.id,
@@ -184,7 +202,7 @@ export class TwitchBot {
     }
 
     public async unbanUser(username: string) {
-        if (!this.broadcasterId) { console.error('Cannot unban: Broadcaster ID unknown'); return; }
+        if (!this.broadcasterId || !this.moderatorId) { console.error('Cannot unban: IDs unknown'); return; }
 
         try {
             const targetUser = await this.getHelixUser(username);
@@ -193,7 +211,7 @@ export class TwitchBot {
             const token = await authService.getToken();
             const settings = settingsStore.get().twitch;
 
-            await axios.delete(`https://api.twitch.tv/helix/moderation/bans?broadcaster_id=${this.broadcasterId}&moderator_id=${this.broadcasterId}&user_id=${targetUser.id}`,
+            await axios.delete(`https://api.twitch.tv/helix/moderation/bans?broadcaster_id=${this.broadcasterId}&moderator_id=${this.moderatorId}&user_id=${targetUser.id}`,
                 {
                     headers: {
                         'Client-ID': settings.clientId,

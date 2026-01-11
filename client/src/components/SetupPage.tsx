@@ -3,11 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Check, ChevronRight, Server, ShieldCheck, Key, ChevronDown } from 'lucide-react';
 import { SecureInput } from './SecureInput';
 
-interface SetupPageProps {
-    onComplete: () => void;
-}
-
-export function SetupPage({ onComplete }: SetupPageProps) {
+export function SetupPage() {
     const [step, setStep] = useState(1);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -84,7 +80,8 @@ export function SetupPage({ onComplete }: SetupPageProps) {
 
             if (!res.ok) throw new Error('Setup failed to save');
 
-            onComplete();
+            // Redirect to Twitch Auth Flow immediately
+            window.location.href = '/auth/twitch';
         } catch (err: any) {
             setError(err.message || 'Setup failed');
             setLoading(false);
@@ -251,7 +248,7 @@ export function SetupPage({ onComplete }: SetupPageProps) {
                     disabled={loading}
                     className="flex-1 bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white font-bold py-3 rounded-xl transition-all flex items-center justify-center gap-2"
                 >
-                    {loading ? 'Saving...' : 'Finish & Connect'} <Check size={20} />
+                    {loading ? 'Saving...' : 'Save & Authenticate'} <Check size={20} />
                 </button>
             </div>
         </div>

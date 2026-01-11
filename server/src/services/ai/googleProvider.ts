@@ -55,4 +55,10 @@ export class GoogleProvider implements AIProvider {
             return { flagged: false, reason: 'Analysis Failed', suggestedAction: 'none' };
         }
     }
+    public async healthCheck(): Promise<boolean> {
+        // For Google, we can't easily "ping" without cost or complexity.
+        // We assume healthy if API Key is present and model initialized.
+        // A more robust check might be a dummy generation, but that costs quota.
+        return !!this.model && !!this.genAI;
+    }
 }

@@ -18,7 +18,10 @@ function App() {
   const [users, setUsers] = useState<ChatUser[]>([]);
   const [isShuttingDown, setIsShuttingDown] = useState(false);
 
-  const [isTwitchConnected, setIsTwitchConnected] = useState(false);
+  const [systemStatus, setSystemStatus] = useState({
+    twitch: { connected: false, channel: '' },
+    ai: { online: false, provider: 'unknown', model: '' }
+  });
 
   // Debug State
   const [debugUser, setDebugUser] = useState('TrollUser');
@@ -43,7 +46,7 @@ function App() {
       const [actionRes, userRes, statusRes] = await Promise.all([
         fetch('/api/actions'),
         fetch('/api/users'),
-        fetch('/api/twitch/status')
+        fetch('/api/status')
       ]);
 
       if (!actionRes.ok || !userRes.ok) throw new Error('Network response was not ok');
@@ -54,7 +57,7 @@ function App() {
 
       setActions(actionData);
       setUsers(userData);
-      setIsTwitchConnected(statusData.connected);
+      setSystemStatus(statusData);
     } catch (err) {
       if (!shutdownRef.current) {
         console.error("Failed to fetch data", err);
@@ -75,7 +78,7 @@ function App() {
   }
 
   if (isSetupComplete === false) {
-    return <SetupPage onComplete={() => setIsSetupComplete(true)} />;
+    return <SetupPage />;
   }
 
   const handleResolve = async (ids: string[], resolution: 'approved' | 'discarded', banDuration?: string) => {
@@ -169,7 +172,7 @@ function App() {
       <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
 
       <div className="flex-1 flex flex-col md:ml-64 relative">
-        <Topbar onShutdown={handleShutdown} isConnected={isTwitchConnected} />
+        <Topbar onShutdown={handleShutdown} status={systemStatus} />
 
         <main className="flex-1 p-8 pt-24 overflow-y-auto custom-scrollbar relative z-0">
           <AnimatePresence mode="wait">

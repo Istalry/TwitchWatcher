@@ -36,9 +36,17 @@ export class OllamaProvider implements AIProvider {
                 suggestedAction: result.suggestedAction,
             };
         } catch (err) {
-            console.error('Ollama Analysis Failed:', err);
-            // Fail open (don't flag if analysis fails)
             return { flagged: false, reason: 'Analysis Failed', suggestedAction: 'none' };
+        }
+    }
+
+    public async healthCheck(): Promise<boolean> {
+        try {
+            await this.ollama.list();
+            return true;
+        } catch (e) {
+            console.error('Ollama Health Check Failed:', e);
+            return false;
         }
     }
 }

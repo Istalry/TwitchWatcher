@@ -35,6 +35,11 @@ export class AIService implements AIProvider {
         const provider = this.getProvider();
         return provider.analyzeMessage(message, history);
     }
+
+    public async healthCheck(): Promise<boolean> {
+        const provider = this.getProvider();
+        return provider.healthCheck();
+    }
 }
 
 export const aiService = new AIService();

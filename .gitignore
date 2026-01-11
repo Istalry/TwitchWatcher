@@ -36,3 +36,6 @@ server/public
 client/dist
 *.exe
 server/settings.json
+
+[bB]uild/
+TwitchWatcher-PersonnalBuild/

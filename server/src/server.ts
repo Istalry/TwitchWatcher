@@ -9,6 +9,7 @@ import { actionQueue } from './store/actionQueue';
 import { falsePositiveStore } from './store/falsePositives';
 import { settingsStore } from './store/settings';
 import { authService } from './services/authService';
+import { aiService } from './services/ai/aiService';
 import open from 'open';
 import crypto from 'crypto';
 
@@ -59,10 +60,20 @@ app.post('/api/setup', (req, res) => {
     res.json({ success: true });
 });
 
-app.get('/api/twitch/status', (req, res) => {
+app.get('/api/status', async (req, res) => {
+    const settings = settingsStore.get();
+    const aiHealth = await aiService.healthCheck();
+
     res.json({
-        connected: twitchBot.isConnected,
-        setupComplete: settingsStore.get().isSetupComplete
+        twitch: {
+            connected: twitchBot.isConnected,
+            channel: settings.twitch.channel || 'None'
+        },
+        ai: {
+            online: aiHealth,
+            provider: settings.ai.provider,
+            model: settings.ai.model
+        }
     });
 });
 
@@ -94,18 +105,11 @@ app.get('/auth/twitch/callback', async (req, res) => {
         // Re-connect bot with new token
         await twitchBot.connect();
 
-        res.send(`
-            <html>
-                <body style="font-family: sans-serif; text-align: center; padding-top: 50px; background: #09090b; color: #f4f4f5;">
-                    <h1>Authentication Successful!</h1>
-                    <p>You can close this window and return to the app.</p>
-                    <script>window.close();</script>
-                </body>
-            </html>
-        `);
+        res.redirect('/');
     } catch (err) {
         res.status(500).send('Failed to exchange code for token. Check server logs.');
     }
+
 });
 
 // 1. Get All Users
