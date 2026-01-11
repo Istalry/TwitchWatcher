@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Check, ChevronRight, Server, ShieldCheck, Key, ChevronDown } from 'lucide-react';
+import { Check, ChevronRight, Server, ShieldCheck, Key, ChevronDown, ExternalLink } from 'lucide-react';
 import { SecureInput } from './SecureInput';
 
 export function SetupPage() {
@@ -140,6 +140,22 @@ export function SetupPage() {
                         value={twitchConfig.channel} onChange={e => handleTwitchChange('channel', e.target.value)} placeholder="TheBroadcaster" />
                 </div>
 
+                {/* Helper / Instructions */}
+                <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-4 space-y-3">
+                    <h3 className="text-blue-400 font-bold text-sm uppercase tracking-wide flex items-center gap-2">
+                        <Key size={16} />
+                        How to get keys
+                    </h3>
+                    <ol className="text-xs text-zinc-400 space-y-2 list-decimal list-inside marker:text-blue-500 font-medium">
+                        <li>Go to <a href="https://dev.twitch.tv/console" target="_blank" rel="noreferrer" className="text-blue-400 hover:underline">Twitch Console</a></li>
+                        <li>Register a new Application (Category: Chat Bot)</li>
+                        <li>Set <strong>OAuth Redirect URL</strong> to:<br />
+                            <code className="bg-black/50 px-1 py-0.5 rounded text-blue-200 selection:bg-blue-500/30">http://localhost:3000/auth/twitch/callback</code>
+                        </li>
+                        <li>Copy <strong>Client ID</strong> & <strong>Secret</strong> below</li>
+                    </ol>
+                </div>
+
                 <SecureInput
                     label="Client ID"
                     value={twitchConfig.clientId}
@@ -232,6 +248,29 @@ export function SetupPage() {
                         placeholder="AIza..."
                         onBlur={() => fetchGoogleModels(aiConfig.apiKey)}
                     />
+                )}
+            </div>
+
+            {/* Helper Instructions depending on Provider */}
+            <div className={`mt-4 rounded-xl p-4 border border-opacity-20 ${aiConfig.provider === 'ollama' ? 'bg-zinc-900 border-zinc-700' : 'bg-blue-500/10 border-blue-500/20'}`}>
+                {aiConfig.provider === 'ollama' ? (
+                    <div className="text-xs text-zinc-400 space-y-2">
+                        <h3 className="text-white font-bold uppercase tracking-wide mb-1 flex items-center gap-2">
+                            <Server size={14} /> Ollama Setup
+                        </h3>
+                        <p>1. Download Ollama from <a href="https://ollama.com" target="_blank" rel="noreferrer" className="text-blue-400 hover:underline flex items-center gap-1 inline-flex">ollama.com <ExternalLink size={10} /></a></p>
+                        <p>2. Run command: <code className="bg-black/50 px-1 py-0.5 rounded text-zinc-300">ollama pull gemma2:2b</code></p>
+                        <p>3. Ensure Ollama is running in background.</p>
+                    </div>
+                ) : (
+                    <div className="text-xs text-zinc-400 space-y-2">
+                        <h3 className="text-blue-400 font-bold uppercase tracking-wide mb-1 flex items-center gap-2">
+                            <ShieldCheck size={14} /> Google AI Setup
+                        </h3>
+                        <p>1. Go to <a href="https://aistudio.google.com/app/api-keys" target="_blank" rel="noreferrer" className="text-blue-400 hover:underline flex items-center gap-1 inline-flex">Google AI Studio <ExternalLink size={10} /></a></p>
+                        <p>2. Create a free API Key.</p>
+                        <p>3. Paste it above.</p>
+                    </div>
                 )}
             </div>
 

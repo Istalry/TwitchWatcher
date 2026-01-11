@@ -4,7 +4,7 @@
 
 > [!WARNING]
 > **LIMITATIONS**: This application is running locally on your machine.
-> *   **Rate Limits**: It cannot handle massive chat volumes (e.g., thousands of messages per second) due to Twitch API rate limits and local processing power.
+> *   **Rate Limits**: It cannot handle massive chat volumes (e.g., thousands of messages per second) due to Google AI API rate limits and local processing power.
 > *   **AI Latency**: Local LLM inference (Ollama) depends on your GPU/CPU speed. High chat traffic may cause a backlog in processing.
 
 # TwitchWatcher
