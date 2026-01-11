@@ -26,7 +26,7 @@ Unlike traditional bots that ban instantly, TwitchWatcher **queues suspicious me
 ### Option 1: Easy Install (Recommended)
 Use this if you just want to run the app without touching code.
 
-1.  **Download** the release zip file: [TwitchWatcher.zip](./TwitchWatcher.zip).
+1.  **Download** the release zip file: [TwitchWatcher.zip](https://github.com/Istalry/TwitchWatcher/releases/tag/Release).
 2.  **Extract All** contents to a folder.
 3.  **Run** the application:
     *   Double-click `TwitchWatcher.exe` (or the main executable provided).
