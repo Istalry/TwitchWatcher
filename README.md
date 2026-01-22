@@ -11,6 +11,8 @@
 
 **TwitchWatcher** is a local, AI-powered auto-moderation dashboard for Twitch streamers. It serves as an intelligent "second pair of eyes," monitoring your chat in real-time to detect toxicity, hate speech, and spam.
 
+![Main Dashboard](resources/mainPage.png)
+
 Unlike traditional bots that ban instantly, TwitchWatcher **queues suspicious messages** for human review. This "Human-in-the-Loop" approach prevents AI hallucinations from causing unfair bans while keeping your community safe.
 
 ## Key Features
@@ -24,6 +26,7 @@ Unlike traditional bots that ban instantly, TwitchWatcher **queues suspicious me
 ## 🚀 Installation & Setup
 
 ### Option 1: Easy Install (Recommended)
+![Easy Setup](resources/easySetup.png)
 Use this if you just want to run the app without touching code.
 
 1.  **Download** the release zip file: [TwitchWatcher.zip](https://github.com/Istalry/TwitchWatcher/releases/tag/Release).
@@ -82,6 +85,7 @@ We take security seriously. Here is how your data is handled:
 ### The Dashboard
 *   **Action Queue**: When the AI flags a message, it appears here. Click **Approve** to punish (Ban/Timeout) or **Discard** to ignore.
 *   **Live Users**: See everyone currently chatting. Click a user to view their history or manually ban them.
+    ![Chat Users Data](resources/chatUsersData.png)
 *   **Settings**: Change AI models, set default timeout duration (e.g., 600s), or clear data.
 
 ### Mobile Access (QR Code)
