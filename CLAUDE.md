@@ -13,7 +13,7 @@ Two independent npm projects with **no workspaces** — the root `package.json` 
 - `server/` — Express API + platform adapters + AI pipeline. TypeScript compiled as CommonJS (`module: node16`), run with `ts-node` in dev, bundled with esbuild for release.
 - `client/` — React 19 + Vite 7 + Tailwind v4 SPA. ESM.
 - `*.bat` at root — Windows setup/run/build scripts.
-- `project_overview.md`, `code_structure.md`, `design_guidelines.md` — design docs. `design_guidelines.md` has the color palette / typography rules for UI work. `implementation_plan.md` and `task.md` are historical and stale.
+- `project_overview.md`, `code_structure.md`, `design_guidelines.md` — design docs. `design_guidelines.md` has the color palette / typography rules for UI work. `implementation_plan.md` is historical and stale; `task.md` is the project checklist (the "Release Pipeline" section is the current roadmap).
 - `.claude/launch.json` — `server` and `client` dev-server configs for the Claude browser preview.
 
 ## Commands

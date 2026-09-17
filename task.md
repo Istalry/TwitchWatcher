@@ -50,3 +50,15 @@
     - [x] **Build System**:
         - [x] Configure `pkg` for single-file executable <!-- id: 36 -->
         - [x] Create final build script <!-- id: 37 -->
+
+- [ ] **Release Pipeline (tags + CI)**
+    - [ ] **Versioning**: single source of truth in `server/package.json` (`version`), mirrored in `client/package.json`; the Sidebar reads it from a build-time define (`__APP_VERSION__`) instead of the hard-coded `v2.0.0-beta` <!-- id: 38 -->
+    - [ ] **Tag scheme**: semver tags `vX.Y.Z` (pre-releases `vX.Y.Z-beta.N`); retire the floating `Release` tag and point the README download link to `releases/latest` <!-- id: 39 -->
+    - [ ] **Release script**: `npm run release -- <patch|minor|major>` bumps both `package.json`, updates `CHANGELOG.md`, commits `chore(release): vX.Y.Z` and creates the annotated tag (no push) <!-- id: 40 -->
+    - [ ] **CHANGELOG.md**: Keep a Changelog format, one section per tag <!-- id: 41 -->
+    - [ ] **CI workflow** (`.github/workflows/ci.yml`, on push/PR): `npm ci` in client + server, client `lint` + `vitest run` + `build`, server `typecheck` + `build` (esbuild bundle) <!-- id: 42 -->
+    - [ ] **Release workflow** (`.github/workflows/release.yml`, on `v*` tag push, `windows-latest`): run the CI steps, then `build_exe.bat` equivalent (client build → `server/public` → bundle → `pkg node22-win-x64` → `add_icon`), zip `TwitchWatcher.exe` + `README.md` + `LICENSE` as `TwitchWatcher-vX.Y.Z-win-x64.zip` <!-- id: 43 -->
+    - [ ] **GitHub Release**: workflow creates the release from the tag (`softprops/action-gh-release`), body = matching CHANGELOG section, attaches the zip + SHA-256 checksum, marks `-beta` tags as pre-release <!-- id: 44 -->
+    - [ ] **Cache & speed**: cache `~/.pkg-cache` (Node 22 binary) and npm caches so a release build stays under ~5 min <!-- id: 45 -->
+    - [ ] **Smoke test in CI**: launch the built exe with `NO_BROWSER=1`, poll `GET /api/setup/status` for a `200`, then `POST /api/shutdown` <!-- id: 46 -->
+    - [ ] **Docs**: README "Easy Install" points to the latest release; `CLAUDE.md` gains a "Releasing" paragraph (bump → tag → push tag → CI publishes) <!-- id: 47 -->
