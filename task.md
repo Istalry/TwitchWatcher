@@ -1,64 +1,45 @@
-# Twitch Auto-Moderator with Ollama
+# TwitchWatcher — Project Checklist
 
-- [ ] **Project Setup**
-    - [ ] Initialize Node.js TypeScript project <!-- id: 0 -->
-    - [ ] Install dependencies (`tmi.js`, `ollama` (or axios), `dotenv`) <!-- id: 1 -->
-    - [ ] Create configuration structure (env vars for keys, config file for settings) <!-- id: 2 -->
-- [ ] **Twitch Integration**
-    - [ ] Implement Twitch Chat Client connection <!-- id: 3 -->
-    - [ ] Implement event listeners (message, connect) <!-- id: 4 -->
-    - [ ] Implement Ban/Timeout actions <!-- id: 5 -->
-- [ ] **Data Management & Persistence**
-    - [x] Create `ChatUser` Schema & Store (in-memory + JSON sync) <!-- id: 6 -->
-    - [x] Implement `users.json` load/save logic <!-- id: 17 -->
-    - [x] Create Pending Actions Store (queue) <!-- id: 18 -->
-    - [x] Create False Positives Store (learning) <!-- id: 29 -->
+Done items are kept as a record of what exists; unchecked items are the roadmap.
 
-- [ ] **Ollama Moderation Engine**
-    - [x] Setup Ollama client (model: `gemma3:4b`) <!-- id: 7 -->
-    - [x] Create prompt template (including few-shot examples from false positives) <!-- id: 8 -->
-    - [x] Implement analysis function <!-- id: 9 -->
+## v1 — Twitch auto-moderator (done)
+- [x] Node/TypeScript server (Express) + React/Vite dashboard
+- [x] Twitch chat via `tmi.js`, ban/timeout via Helix, Twitch OAuth
+- [x] Ollama moderation engine (`gemma3:4b`) with Google Gemini as alternative provider
+- [x] Persistent user history (`users.json`), pending-action queue, human-in-the-loop resolve API
+- [x] Dashboard: Action cards, Chat Users tab with detail view, Settings, Debug tools
+- [x] Setup wizard, encrypted `settings.json` (AES-256-GCM, machine-bound), runtime provider switching
+- [x] Network access + QR code pairing
+- [x] Single-file Windows executable (`pkg`)
 
-- [ ] **Backend API & Core Logic**
-    - [x] Setup Express Server <!-- id: 19 -->
-    - [x] Implement API: `GET /users`, `GET /users/:id/messages` <!-- id: 20 -->
-    - [x] Implement API: `GET /actions`, `POST /actions/:id/resolve` <!-- id: 21 -->
-    - [x] Tie chat events to moderation engine (flag -> add to pending queue) <!-- id: 10 -->
-    - [x] Implement Ban/Timeout execution logic (triggered via API) <!-- id: 12 -->
+## v2 — Multi-platform + moderation tuning (done)
+- [x] Platform adapter layer (`server/src/platforms`): Twitch, YouTube (InnerTube read + Data API bans, Google OAuth), TikTok (read-only)
+- [x] `chatHub` + SSE stream (`/api/chat/stream`) replacing action polling
+- [x] Settings `platforms.{twitch,youtube,tiktok}` with enable flags; migration of v1 `settings.json` / `users.json`
+- [x] Wizard: Welcome → Platforms (skippable) → AI; platforms configurable later in Settings with hot reconnect
+- [x] Moderation tab: merged live chat | action queue split view, Chat/Queue toggle and bottom nav on phones
+- [x] Structured verdicts (category + severity), sensitivity levels, category toggles, hard floor for hate/threat
+- [x] Below-threshold notes, repeat escalation, one coalesced card per user, trusted roles skipped, flood breaker
+- [x] AI failures surfaced in the Topbar; debounced `users.json` writes; cached Twitch token validation
+- [x] Removed false-positive learning loop, `.env` config path and dead scripts
+- [x] esbuild bundle → `dist/server.cjs`, `pkg node22-win-x64`, data files next to the exe
+- [x] Client tests (vitest + Testing Library): ActionCard, Sidebar, UserList, LiveChat, ModerationView, NetworkQRCode
+- [x] Docs: `CLAUDE.md`, README, `project_overview.md`, `code_structure.md`
 
-- [ ] **Frontend Dashboard (Neo Design)**
-    - [x] Setup Vite + React Project <!-- id: 22 -->
-    - [x] Create Layout (Dark Mode, Glassmorphism) <!-- id: 23 -->
-    - [x] Implement **Action Tab** (Rich Card: Summary, Message, Stats, Actions) <!-- id: 24 -->
-    - [x] Implement **Chat Users Tab** (Sortable Table, Detail View with Notes) <!-- id: 25 -->
-    - [x] Connect Frontend to Backend (API integration) <!-- id: 26 -->
+## Release pipeline (tags + CI)
+- [ ] **Versioning**: single source of truth in `server/package.json` (`version`), mirrored in `client/package.json`; the Sidebar reads it from a build-time define (`__APP_VERSION__`) instead of the hard-coded `v2.0.0-beta`
+- [ ] **Tag scheme**: semver tags `vX.Y.Z` (pre-releases `vX.Y.Z-beta.N`); retire the floating `Release` tag and point the README download link to `releases/latest`
+- [ ] **Release script**: `npm run release -- <patch|minor|major>` bumps both `package.json`, updates `CHANGELOG.md`, commits `chore(release): vX.Y.Z` and creates the annotated tag (no push)
+- [ ] **CHANGELOG.md**: Keep a Changelog format, one section per tag
+- [ ] **CI workflow** (`.github/workflows/ci.yml`, on push/PR): `npm ci` in client + server, client `lint` + `vitest run` + `build`, server `typecheck` + `build` (esbuild bundle)
+- [ ] **Release workflow** (`.github/workflows/release.yml`, on `v*` tag push, `windows-latest`): run the CI steps, then the `build_exe.bat` equivalent (client build → `server/public` → bundle → `pkg node22-win-x64` → `add_icon`), zip `TwitchWatcher.exe` + `README.md` + `LICENSE` as `TwitchWatcher-vX.Y.Z-win-x64.zip`
+- [ ] **GitHub Release**: workflow creates the release from the tag (`softprops/action-gh-release`), body = matching CHANGELOG section, attaches the zip + SHA-256 checksum, marks `-beta` tags as pre-release
+- [ ] **Cache & speed**: cache `~/.pkg-cache` (Node 22 binary) and npm caches so a release build stays under ~5 min
+- [ ] **Smoke test in CI**: launch the built exe with `NO_BROWSER=1`, poll `GET /api/setup/status` for a `200`, then `POST /api/shutdown`
+- [ ] **Docs**: README "Easy Install" points to the latest release; `CLAUDE.md` gains a "Releasing" paragraph (bump → tag → push tag → CI publishes)
 
-- [ ] **Verification**
-    - [ ] Mock Twitch chat for testing <!-- id: 15 -->
-    - [ ] Verify "Discard" flow updates AI context <!-- id: 16 -->
-    - [ ] Verify Manual Ban/Timeout flow <!-- id: 27 -->
-
-- [x] **Project Finalization (Setup & Build)**
-    - [x] **Unified Settings Store**: Move env vars (Twitch/AI keys) to `settings.json` with runtime updates <!-- id: 30 -->
-    - [x] **Dynamic AI Service**: Refactor AI service to support runtime provider switching (Ollama/Google) <!-- id: 31 -->
-    - [x] **Secure Setup Flow**:
-        - [x] Backend API for Setup/Config <!-- id: 32 -->
-        - [x] Frontend Setup Wizard (First launch experience) <!-- id: 33 -->
-    - [x] **Advanced Settings Page**:
-        - [x] AI Provider/Model Switcher <!-- id: 34 -->
-        - [x] Secure Field Component (Masked + Warning Modal) <!-- id: 35 -->
-    - [x] **Build System**:
-        - [x] Configure `pkg` for single-file executable <!-- id: 36 -->
-        - [x] Create final build script <!-- id: 37 -->
-
-- [ ] **Release Pipeline (tags + CI)**
-    - [ ] **Versioning**: single source of truth in `server/package.json` (`version`), mirrored in `client/package.json`; the Sidebar reads it from a build-time define (`__APP_VERSION__`) instead of the hard-coded `v2.0.0-beta` <!-- id: 38 -->
-    - [ ] **Tag scheme**: semver tags `vX.Y.Z` (pre-releases `vX.Y.Z-beta.N`); retire the floating `Release` tag and point the README download link to `releases/latest` <!-- id: 39 -->
-    - [ ] **Release script**: `npm run release -- <patch|minor|major>` bumps both `package.json`, updates `CHANGELOG.md`, commits `chore(release): vX.Y.Z` and creates the annotated tag (no push) <!-- id: 40 -->
-    - [ ] **CHANGELOG.md**: Keep a Changelog format, one section per tag <!-- id: 41 -->
-    - [ ] **CI workflow** (`.github/workflows/ci.yml`, on push/PR): `npm ci` in client + server, client `lint` + `vitest run` + `build`, server `typecheck` + `build` (esbuild bundle) <!-- id: 42 -->
-    - [ ] **Release workflow** (`.github/workflows/release.yml`, on `v*` tag push, `windows-latest`): run the CI steps, then `build_exe.bat` equivalent (client build → `server/public` → bundle → `pkg node22-win-x64` → `add_icon`), zip `TwitchWatcher.exe` + `README.md` + `LICENSE` as `TwitchWatcher-vX.Y.Z-win-x64.zip` <!-- id: 43 -->
-    - [ ] **GitHub Release**: workflow creates the release from the tag (`softprops/action-gh-release`), body = matching CHANGELOG section, attaches the zip + SHA-256 checksum, marks `-beta` tags as pre-release <!-- id: 44 -->
-    - [ ] **Cache & speed**: cache `~/.pkg-cache` (Node 22 binary) and npm caches so a release build stays under ~5 min <!-- id: 45 -->
-    - [ ] **Smoke test in CI**: launch the built exe with `NO_BROWSER=1`, poll `GET /api/setup/status` for a `200`, then `POST /api/shutdown` <!-- id: 46 -->
-    - [ ] **Docs**: README "Easy Install" points to the latest release; `CLAUDE.md` gains a "Releasing" paragraph (bump → tag → push tag → CI publishes) <!-- id: 47 -->
+## Known limitations / ideas
+- [ ] YouTube `unban` only works for bans issued in the current session (needs the ban id) — persist `banIds` or look them up via `liveChatBans`
+- [ ] Server has no automated tests (stores/services have import side effects) — add a test entry point that avoids the `analysisQueue` interval and file I/O
+- [ ] Small models (`gemma3:4b`) over-weight repetition and the literal word "hate" — evaluate a prompt/few-shot set per model, or a larger default model
+- [ ] Update README screenshots (`resources/*.png`) to the v2 Moderation tab
