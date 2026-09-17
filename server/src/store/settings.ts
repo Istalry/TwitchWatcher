@@ -1,13 +1,53 @@
 import fs from 'fs';
 import path from 'path';
+import { DATA_DIR } from '../paths';
 import crypto from 'crypto';
 import os from 'os';
+import { ModerationCategory, Platform } from './types';
 
-// Check if running inside pkg (compiled executable)
-const isPkg = (process as any).pkg;
-const ROOT_DIR = isPkg ? path.dirname(process.execPath) : path.join(__dirname, '../../');
-const SETTINGS_FILE = path.join(ROOT_DIR, 'settings.json');
+const SETTINGS_FILE = path.join(DATA_DIR, 'settings.json');
 const ALGORITHM = 'aes-256-gcm';
+
+export type Sensitivity = 'lenient' | 'balanced' | 'strict';
+
+export interface TwitchSettings {
+    enabled: boolean;
+    username: string;
+    channel: string;
+    clientId: string;
+    clientSecret: string;
+    accessToken?: string;
+    refreshToken?: string;
+}
+
+export interface YouTubeSettings {
+    enabled: boolean;
+    channel: string; // @handle or UC... channel id
+    videoIdOverride?: string; // watch a specific live video instead of auto-detecting
+    clientId: string; // Google Cloud OAuth client (YouTube Data API v3)
+    clientSecret: string;
+    accessToken?: string;
+    refreshToken?: string;
+    expiresAt?: number;
+}
+
+export interface TikTokSettings {
+    enabled: boolean;
+    username: string;
+    signApiKey?: string; // optional Euler Stream key for higher rate limits
+}
+
+export interface PlatformSettingsMap {
+    twitch: TwitchSettings;
+    youtube: YouTubeSettings;
+    tiktok: TikTokSettings;
+}
+
+export interface ModerationSettings {
+    sensitivity: Sensitivity;
+    categories: Record<ModerationCategory, boolean>;
+    skipTrustedRoles: boolean; // don't analyze broadcaster / platform moderators
+}
 
 export interface AppSettings {
     // General
@@ -17,15 +57,9 @@ export interface AppSettings {
     aiLanguage: string;
     defaultTimeoutDuration: number;
 
-    // Twitch
-    twitch: {
-        username: string;
-        channel: string;
-        clientId: string;
-        clientSecret: string;
-        accessToken?: string;
-        refreshToken?: string;
-    };
+    moderation: ModerationSettings;
+
+    platforms: PlatformSettingsMap;
 
     // AI
     ai: {
@@ -39,11 +73,15 @@ const DEFAULT_SETTINGS: AppSettings = {
     isSetupComplete: false,
     aiLanguage: 'English',
     defaultTimeoutDuration: 600,
-    twitch: {
-        username: '',
-        channel: '',
-        clientId: '',
-        clientSecret: '',
+    moderation: {
+        sensitivity: 'balanced',
+        categories: { hate: true, harassment: true, threat: true, spam: true, vulgarity: true, other: true },
+        skipTrustedRoles: true,
+    },
+    platforms: {
+        twitch: { enabled: false, username: '', channel: '', clientId: '', clientSecret: '' },
+        youtube: { enabled: false, channel: '', clientId: '', clientSecret: '' },
+        tiktok: { enabled: false, username: '' },
     },
     ai: {
         provider: 'ollama',
@@ -55,6 +93,33 @@ interface EncryptedData {
     iv: string;
     authTag: string;
     content: string;
+}
+
+const isObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
+
+/** Recursively fills missing keys from `defaults`; values in `value` win. */
+function withDefaults<T>(defaults: T, value: unknown): T {
+    if (!isObject(defaults) || !isObject(value)) return (value === undefined ? defaults : value) as T;
+    const out: Record<string, unknown> = { ...(defaults as Record<string, unknown>) };
+    for (const [k, v] of Object.entries(value)) {
+        out[k] = k in (defaults as object) ? withDefaults((defaults as Record<string, unknown>)[k], v) : v;
+    }
+    return out as T;
+}
+
+/** Upgrades a settings object from the single-platform (Twitch-only) layout. */
+function migrate(parsed: Record<string, unknown>): Record<string, unknown> {
+    if (isObject(parsed.twitch) && !parsed.platforms) {
+        const twitch = parsed.twitch as Partial<TwitchSettings>;
+        const { twitch: _drop, ...rest } = parsed;
+        return {
+            ...rest,
+            platforms: {
+                twitch: { ...twitch, enabled: !!twitch.username && !!twitch.channel },
+            },
+        };
+    }
+    return parsed;
 }
 
 export class SettingsStore {
@@ -105,23 +170,24 @@ export class SettingsStore {
     }
 
     public update(partial: Partial<AppSettings> | ((current: AppSettings) => Partial<AppSettings>)) {
-        if (typeof partial === 'function') {
-            const updates = partial(this.settings);
-            this.settings = { ...this.settings, ...updates };
-        } else {
-            this.settings = { ...this.settings, ...partial };
-        }
+        const updates = typeof partial === 'function' ? partial(this.get()) : partial;
+        this.settings = withDefaults(this.settings, { ...this.settings, ...updates });
         this.save();
     }
 
     // Specific updaters for nested objects to make usage easier
-    public updateTwitch(updates: Partial<AppSettings['twitch']>) {
-        this.settings.twitch = { ...this.settings.twitch, ...updates };
+    public updatePlatform<P extends Platform>(platform: P, updates: Partial<PlatformSettingsMap[P]>) {
+        this.settings.platforms[platform] = { ...this.settings.platforms[platform], ...updates };
         this.save();
     }
 
     public updateAI(updates: Partial<AppSettings['ai']>) {
         this.settings.ai = { ...this.settings.ai, ...updates };
+        this.save();
+    }
+
+    public updateModeration(updates: Partial<ModerationSettings>) {
+        this.settings.moderation = withDefaults(this.settings.moderation, updates);
         this.save();
     }
 
@@ -135,7 +201,7 @@ export class SettingsStore {
                 if (parsed.iv && parsed.content && parsed.authTag) {
                     try {
                         const decryptedJson = this.decrypt(parsed as EncryptedData);
-                        return { ...DEFAULT_SETTINGS, ...JSON.parse(decryptedJson) };
+                        return withDefaults(DEFAULT_SETTINGS, migrate(JSON.parse(decryptedJson)));
                     } catch (e) {
                         console.error('Failed to decrypt settings.json. Machine signature mismatch?');
                         // Return default, forcing re-setup if key implies different machine
@@ -144,7 +210,7 @@ export class SettingsStore {
                 } else {
                     // Migration: Handle plain JSON if it exists from previous version
                     // We will save it encrypted immediately after loading
-                    const migrated = { ...DEFAULT_SETTINGS, ...parsed };
+                    const migrated = withDefaults(DEFAULT_SETTINGS, migrate(parsed));
                     this.settings = migrated; // Set temporarily so save works
                     this.save();
                     return migrated;
@@ -153,7 +219,7 @@ export class SettingsStore {
                 console.error('Failed to load settings.json', e);
             }
         }
-        return { ...DEFAULT_SETTINGS };
+        return JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
     }
 
     private save() {

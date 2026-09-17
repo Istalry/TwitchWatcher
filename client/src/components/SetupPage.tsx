@@ -2,18 +2,15 @@ import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Check, ChevronRight, Server, ShieldCheck, Key, ChevronDown, ExternalLink } from 'lucide-react';
 import { SecureInput } from './SecureInput';
+import { TwitchCard, YouTubeCard, TikTokCard } from './platforms/PlatformCards';
+import { DEFAULT_PLATFORM_SETTINGS, PLATFORMS, type PlatformSettingsMap } from '../types';
 
 export function SetupPage() {
     const [step, setStep] = useState(1);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    const [twitchConfig, setTwitchConfig] = useState({
-        username: '',
-        channel: '',
-        clientId: '',
-        clientSecret: ''
-    });
+    const [platforms, setPlatforms] = useState<PlatformSettingsMap>(DEFAULT_PLATFORM_SETTINGS);
 
     const [aiConfig, setAiConfig] = useState({
         provider: 'ollama' as 'ollama' | 'google',
@@ -24,11 +21,13 @@ export function SetupPage() {
     const [availableModels, setAvailableModels] = useState<string[]>(['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-2.0-flash-exp', 'gemma-3-27b-it']);
     const [fetchingModels, setFetchingModels] = useState(false);
 
+    const enabledCount = PLATFORMS.filter(p => platforms[p].enabled).length;
+
     const fetchGoogleModels = async (key: string) => {
         if (!key || key.length < 10) return;
         setFetchingModels(true);
         try {
-            const res = await fetch(`http://localhost:3000/api/ai/models/google?key=${key}`);
+            const res = await fetch(`/api/ai/models/google?key=${encodeURIComponent(key)}`);
             if (res.ok) {
                 const models = await res.json();
                 if (models && models.length > 0) {
@@ -46,10 +45,6 @@ export function SetupPage() {
         }
     };
 
-    const handleTwitchChange = (key: string, val: string) => {
-        setTwitchConfig(prev => ({ ...prev, [key]: val }));
-    };
-
     const handleAiChange = (key: string, val: string) => {
         setAiConfig(prev => ({ ...prev, [key]: val }));
 
@@ -63,27 +58,32 @@ export function SetupPage() {
         }
     };
 
+    /** Client-side check mirroring the server's: only enabled platforms need their fields. */
+    const platformsValid = () => {
+        const t = platforms.twitch, y = platforms.youtube, k = platforms.tiktok;
+        if (t.enabled && (!t.username || !t.channel || !t.clientId || !t.clientSecret)) return false;
+        if (y.enabled && !y.channel && !y.videoIdOverride) return false;
+        if (k.enabled && !k.username) return false;
+        return true;
+    };
+
     const submitSetup = async () => {
         setLoading(true);
         setError(null);
         try {
-            const payload = {
-                twitch: twitchConfig,
-                ai: aiConfig
-            };
-
-            const res = await fetch('http://localhost:3000/api/setup', {
+            const res = await fetch('/api/setup', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
+                body: JSON.stringify({ platforms, ai: aiConfig })
             });
 
-            if (!res.ok) throw new Error('Setup failed to save');
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.error || 'Setup failed to save');
 
-            // Redirect to Twitch Auth Flow immediately
-            window.location.href = '/auth/twitch';
-        } catch (err: any) {
-            setError(err.message || 'Setup failed');
+            // Server chains the OAuth flows (Twitch → YouTube) and lands on the dashboard.
+            window.location.href = data.nextAuthUrl || '/';
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Setup failed');
             setLoading(false);
         }
     };
@@ -95,7 +95,7 @@ export function SetupPage() {
                     <ShieldCheck size={32} />
                 </div>
                 <h1 className="text-3xl font-black text-white">Welcome to TwitchWatcher</h1>
-                <p className="text-zinc-400">Your local, AI-powered auto-moderator.</p>
+                <p className="text-zinc-400">Your local, AI-powered auto-moderator for Twitch, YouTube and TikTok.</p>
             </div>
 
             <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 space-y-4">
@@ -103,7 +103,7 @@ export function SetupPage() {
                     <div className="p-2 bg-zinc-800 rounded-lg text-blue-400"><Key size={20} /></div>
                     <div>
                         <h3 className="font-bold text-white">Secure & Private</h3>
-                        <p className="text-sm text-zinc-400">Your keys are encrypted on your device. Nothing leaves your local network except what you send to Twitch.</p>
+                        <p className="text-sm text-zinc-400">Your keys are encrypted on your device. Nothing leaves your local network except what you send to the platforms.</p>
                     </div>
                 </div>
                 <div className="flex items-start gap-3">
@@ -124,60 +124,29 @@ export function SetupPage() {
     const renderStep2 = () => (
         <div className="space-y-6">
             <div className="text-center">
-                <h2 className="text-2xl font-bold text-white">Twitch Configuration</h2>
-                <p className="text-zinc-400 text-sm">Create an Application on the Twitch Console to get these.</p>
+                <h2 className="text-2xl font-bold text-white">Platforms</h2>
+                <p className="text-zinc-400 text-sm">Pick the chats to watch. You can add or change platforms later in Settings.</p>
             </div>
 
-            <div className="space-y-4">
-                <div>
-                    <label className="block text-zinc-400 text-sm mb-1">Twitch Username (Bot Account)</label>
-                    <input type="text" className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-3 text-white focus:border-blue-500 outline-none"
-                        value={twitchConfig.username} onChange={e => handleTwitchChange('username', e.target.value)} placeholder="JustB0t..." />
-                </div>
-                <div>
-                    <label className="block text-zinc-400 text-sm mb-1">Channel to Watch</label>
-                    <input type="text" className="w-full bg-zinc-950 border border-zinc-800 rounded-lg p-3 text-white focus:border-blue-500 outline-none"
-                        value={twitchConfig.channel} onChange={e => handleTwitchChange('channel', e.target.value)} placeholder="TheBroadcaster" />
-                </div>
-
-                {/* Helper / Instructions */}
-                <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-4 space-y-3">
-                    <h3 className="text-blue-400 font-bold text-sm uppercase tracking-wide flex items-center gap-2">
-                        <Key size={16} />
-                        How to get keys
-                    </h3>
-                    <ol className="text-xs text-zinc-400 space-y-2 list-decimal list-inside marker:text-blue-500 font-medium">
-                        <li>Go to <a href="https://dev.twitch.tv/console" target="_blank" rel="noreferrer" className="text-blue-400 hover:underline">Twitch Console</a></li>
-                        <li>Register a new Application (Category: Chat Bot)</li>
-                        <li>Set <strong>OAuth Redirect URL</strong> to:<br />
-                            <code className="bg-black/50 px-1 py-0.5 rounded text-blue-200 selection:bg-blue-500/30">http://localhost:3000/auth/twitch/callback</code>
-                        </li>
-                        <li>Copy <strong>Client ID</strong> & <strong>Secret</strong> below</li>
-                    </ol>
-                </div>
-
-                <SecureInput
-                    label="Client ID"
-                    value={twitchConfig.clientId}
-                    onChange={val => handleTwitchChange('clientId', val)}
-                />
-                <SecureInput
-                    label="Client Secret"
-                    value={twitchConfig.clientSecret}
-                    onChange={val => handleTwitchChange('clientSecret', val)}
-                />
+            <div className="space-y-3">
+                <TwitchCard mode="setup" value={platforms.twitch} onChange={twitch => setPlatforms(p => ({ ...p, twitch }))} />
+                <YouTubeCard mode="setup" value={platforms.youtube} onChange={youtube => setPlatforms(p => ({ ...p, youtube }))} />
+                <TikTokCard mode="setup" value={platforms.tiktok} onChange={tiktok => setPlatforms(p => ({ ...p, tiktok }))} />
             </div>
 
-            <div className="flex gap-3">
+            <div className="flex gap-3 items-center">
                 <button onClick={() => setStep(1)} className="px-4 py-3 rounded-xl bg-zinc-800 text-zinc-400 hover:text-white font-medium">Back</button>
                 <button
-                    disabled={!twitchConfig.clientId || !twitchConfig.clientSecret}
+                    disabled={!platformsValid()}
                     onClick={() => setStep(3)}
                     className="flex-1 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-3 rounded-xl transition-all flex items-center justify-center gap-2"
                 >
-                    Next Step <ChevronRight size={20} />
+                    {enabledCount === 0 ? 'Skip for now' : 'Next Step'} <ChevronRight size={20} />
                 </button>
             </div>
+            {enabledCount === 0 && (
+                <p className="text-center text-xs text-zinc-500">No platform selected — the dashboard will stay empty until you enable one in Settings.</p>
+            )}
         </div>
     );
 
@@ -259,7 +228,7 @@ export function SetupPage() {
                             <Server size={14} /> Ollama Setup
                         </h3>
                         <p>1. Download Ollama from <a href="https://ollama.com" target="_blank" rel="noreferrer" className="text-blue-400 hover:underline flex items-center gap-1 inline-flex">ollama.com <ExternalLink size={10} /></a></p>
-                        <p>2. Run command: <code className="bg-black/50 px-1 py-0.5 rounded text-zinc-300">ollama pull gemma2:2b</code></p>
+                        <p>2. Run command: <code className="bg-black/50 px-1 py-0.5 rounded text-zinc-300">ollama pull gemma3:4b</code></p>
                         <p>3. Ensure Ollama is running in background.</p>
                     </div>
                 ) : (
@@ -287,7 +256,7 @@ export function SetupPage() {
                     disabled={loading}
                     className="flex-1 bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white font-bold py-3 rounded-xl transition-all flex items-center justify-center gap-2"
                 >
-                    {loading ? 'Saving...' : 'Save & Authenticate'} <Check size={20} />
+                    {loading ? 'Saving...' : enabledCount > 0 ? 'Save & Connect' : 'Save & Finish'} <Check size={20} />
                 </button>
             </div>
         </div>
@@ -295,7 +264,7 @@ export function SetupPage() {
 
     return (
         <div className="min-h-screen bg-zinc-950 flex items-center justify-center p-4 font-sans text-zinc-100">
-            <div className="max-w-md w-full">
+            <div className={`w-full ${step === 2 ? 'max-w-xl' : 'max-w-md'} transition-all`}>
                 {/* Progress Dots */}
                 <div className="flex justify-center gap-2 mb-8">
                     {[1, 2, 3].map(i => (

@@ -23,17 +23,17 @@ if %errorlevel% neq 0 (
     exit /b %errorlevel%
 )
 
-echo [3/4] Compiling Server...
+echo [3/4] Bundling Server (typecheck + esbuild)...
 cd server
 call npm run build
 if %errorlevel% neq 0 (
-    echo Server compilation failed!
+    echo Server build failed!
     pause
     exit /b %errorlevel%
 )
 
-echo [4/4] Generating Executable...
-call npx pkg .
+echo [4/4] Generating Executable (pkg, Node 20)...
+call npm run package
 if %errorlevel% neq 0 (
     echo Packaging failed!
     pause
@@ -41,19 +41,11 @@ if %errorlevel% neq 0 (
 )
 
 REM echo [Post-Build] Injecting Application Icon...
-REM if exist "dist\twitch-automod-server.exe" (
-REM    call npx ts-node src/scripts/add_icon.ts
-REM    if %errorlevel% neq 0 (
-REM        echo Icon injection failed!
-REM        pause
-REM    )
-REM ) else (
-REM    echo Executable not found!
-REM    pause
-REM )
+REM call npx ts-node src/scripts/add_icon.ts
 
 echo ==========================================
 echo        BUILD SUCCESSFUL
 echo ==========================================
-echo Executable located in: server\dist\twitch-automod-server.exe
+echo Executable located in: server\dist\TwitchWatcher.exe
+echo settings.json / users.json are created next to the exe on first run.
 pause

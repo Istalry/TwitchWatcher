@@ -1,11 +1,13 @@
-import { useEffect, useState, useRef } from 'react'
-import { ActionCard } from './components/ActionCard';
+import { useCallback, useEffect, useState, useRef } from 'react'
 import { UserList } from './components/UserList';
-import { Sidebar } from './components/Sidebar';
+import { Sidebar, MobileNav, type TabId } from './components/Sidebar';
 import { Topbar } from './components/Topbar';
 import { Settings } from './components/Settings';
-import { SetupPage } from './components/SetupPage'; // Import SetupPage
-import { type PendingAction, type ChatUser } from './types';
+import { SetupPage } from './components/SetupPage';
+import { ModerationView } from './components/ModerationView';
+import { useChatStream } from './hooks/useChatStream';
+import { EMPTY_STATUS, PLATFORMS, type ActionEvent, type PendingAction, type ChatUser, type Platform, type SystemStatus } from './types';
+import { PLATFORM_META } from './platformMeta';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Bug } from 'lucide-react';
 import { Power } from 'lucide-react';
@@ -13,20 +15,17 @@ import './styles/neo.css';
 
 function App() {
   const [isSetupComplete, setIsSetupComplete] = useState<boolean | null>(null); // null = loading
-  const [activeTab, setActiveTab] = useState<'actions' | 'users' | 'debug' | 'settings'>('actions');
+  const [activeTab, setActiveTab] = useState<TabId>('moderation');
   const [actions, setActions] = useState<PendingAction[]>([]);
   const [users, setUsers] = useState<ChatUser[]>([]);
   const [isShuttingDown, setIsShuttingDown] = useState(false);
-
-  const [systemStatus, setSystemStatus] = useState({
-    twitch: { connected: false, channel: '' },
-    ai: { online: false, provider: 'unknown', model: '' }
-  });
+  const [systemStatus, setSystemStatus] = useState<SystemStatus>(EMPTY_STATUS);
 
   // Debug State
   const [debugUser, setDebugUser] = useState('TrollUser');
   const [debugMsg, setDebugMsg] = useState('This is a test message');
   const [debugReason, setDebugReason] = useState('Manual Flag');
+  const [debugPlatform, setDebugPlatform] = useState<Platform>('twitch');
 
   const shutdownRef = useRef(false);
 
@@ -40,8 +39,18 @@ function App() {
       .catch(() => setIsSetupComplete(false)); // Assume false if fail
   }, []);
 
-  const fetchData = async () => {
-    if (shutdownRef.current || isSetupComplete === false) return;
+  // Action-queue changes arrive over the SSE stream, so the queue never waits for a poll.
+  const handleActionEvent = useCallback((evt: ActionEvent) => {
+    setActions(prev => {
+      const others = prev.filter(a => a.id !== evt.action.id);
+      return evt.type === 'resolved' ? others : [...others, evt.action].sort((a, b) => a.timestamp - b.timestamp);
+    });
+  }, []);
+
+  const { messages, connected: streamConnected } = useChatStream({ enabled: isSetupComplete === true, onAction: handleActionEvent });
+
+  const fetchData = useCallback(async () => {
+    if (shutdownRef.current) return;
     try {
       const [actionRes, userRes, statusRes] = await Promise.all([
         fetch('/api/actions'),
@@ -49,21 +58,17 @@ function App() {
         fetch('/api/status')
       ]);
 
-      if (!actionRes.ok || !userRes.ok) throw new Error('Network response was not ok');
+      if (!actionRes.ok || !userRes.ok || !statusRes.ok) throw new Error('Network response was not ok');
 
-      const actionData = await actionRes.json();
-      const userData = await userRes.json();
-      const statusData = await statusRes.json(); // May fail if not implemented yet, so careful? No we implemented it.
-
-      setActions(actionData);
-      setUsers(userData);
-      setSystemStatus(statusData);
+      setActions(await actionRes.json());
+      setUsers(await userRes.json());
+      setSystemStatus(await statusRes.json());
     } catch (err) {
       if (!shutdownRef.current) {
         console.error("Failed to fetch data", err);
       }
     }
-  };
+  }, []);
 
   useEffect(() => {
     if (isSetupComplete) {
@@ -71,7 +76,7 @@ function App() {
       const interval = setInterval(fetchData, 2000);
       return () => clearInterval(interval);
     }
-  }, [isSetupComplete]);
+  }, [isSetupComplete, fetchData]);
 
   if (isSetupComplete === null) {
     return <div className="min-h-screen bg-[#09090b] flex items-center justify-center text-white">Loading...</div>;
@@ -83,8 +88,7 @@ function App() {
 
   const handleResolve = async (ids: string[], resolution: 'approved' | 'discarded', banDuration?: string) => {
     try {
-      // Resolve all actions sequentially
-      await Promise.all(ids.map(id =>
+      const results = await Promise.all(ids.map(id =>
         fetch(`/api/actions/${id}/resolve`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -92,17 +96,41 @@ function App() {
         })
       ));
 
-      setActions(prev => prev.filter(a => !ids.includes(a.id)));
+      const failed = results.filter(r => !r.ok);
+      if (failed.length > 0) {
+        const data = await failed[0].json().catch(() => ({}));
+        alert(data.error || 'Failed to execute the action. It stays in the queue so you can retry.');
+      }
+      const resolvedIds = ids.filter((_, i) => results[i].ok);
+      setActions(prev => prev.filter(a => !resolvedIds.includes(a.id)));
     } catch (err) {
       console.error('Failed to resolve actions', err);
     }
   };
 
-  const handleDeleteUser = async (username: string) => {
+  const handleQuickModerate = async (userKey: string, action: 'ban' | 'timeout') => {
+    const user = users.find(u => u.key === userKey);
+    const label = user ? `${user.displayName} (${PLATFORM_META[user.platform].label})` : userKey;
+    if (!confirm(`${action === 'ban' ? 'Ban' : 'Timeout'} ${label}?`)) return;
     try {
-      await fetch(`/api/users/${username}`, { method: 'DELETE' });
-      // Refresh data
-      setUsers(prev => prev.filter(u => u.username !== username));
+      const res = await fetch(`/api/users/${encodeURIComponent(userKey)}/moderate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action })
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || `Failed to ${action}`);
+      }
+    } catch (err) {
+      console.error('Failed to moderate', err);
+    }
+  };
+
+  const handleDeleteUser = async (key: string) => {
+    try {
+      await fetch(`/api/users/${encodeURIComponent(key)}`, { method: 'DELETE' });
+      setUsers(prev => prev.filter(u => u.key !== key));
     } catch (err) {
       console.error('Failed to delete user', err);
     }
@@ -123,19 +151,16 @@ function App() {
     await fetch('/api/debug/message', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: debugUser, message: debugMsg })
+      body: JSON.stringify({ username: debugUser, message: debugMsg, platform: debugPlatform })
     });
-    alert('Message sent!');
   };
 
   const sendDebugFlag = async () => {
     await fetch('/api/debug/flag', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: debugUser, message: debugMsg, reason: debugReason })
+      body: JSON.stringify({ username: debugUser, message: debugMsg, reason: debugReason, platform: debugPlatform })
     });
-    alert('Flag created!');
-    fetchData();
   };
 
   if (isShuttingDown) {
@@ -156,58 +181,35 @@ function App() {
     );
   }
 
-  // Group actions by username
-  const groupedActions = actions.reduce((acc, action) => {
-    if (!acc[action.username]) {
-      acc[action.username] = [];
-    }
-    acc[action.username].push(action);
-    return acc;
-  }, {} as Record<string, PendingAction[]>);
-
-  const actionGroups = Object.values(groupedActions);
+  const inputClass = "w-full bg-zinc-800 border-2 border-transparent rounded-xl p-5 text-white font-bold focus:border-zinc-600 focus:outline-none transition-all placeholder:text-zinc-600 shadow-inner";
 
   return (
     <div className="min-h-screen w-full bg-[#09090b] text-white font-inter flex relative overflow-hidden">
       <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
+      <MobileNav activeTab={activeTab} setActiveTab={setActiveTab} />
 
       <div className="flex-1 flex flex-col md:ml-64 relative">
         <Topbar onShutdown={handleShutdown} status={systemStatus} />
 
-        <main className="flex-1 p-8 pt-24 overflow-y-auto custom-scrollbar relative z-0">
+        <main className={`flex-1 p-4 md:p-8 pb-24 md:pb-8 overflow-y-auto custom-scrollbar relative z-0 ${systemStatus.ai.floodActive ? 'pt-32' : 'pt-24'}`}>
           <AnimatePresence mode="wait">
-            {activeTab === 'actions' && (
+            {activeTab === 'moderation' && (
               <motion.div
-                key="actions"
+                key="moderation"
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -10 }}
                 transition={{ duration: 0.2 }}
-                className="max-w-5xl mx-auto space-y-8"
               >
-                {actions.length === 0 ? (
-                  <div className="bg-[#18181b] rounded-3xl p-16 border border-white/5 h-80 flex flex-col justify-center text-center shadow-2xl">
-                    <h3 className="text-4xl font-black mb-6 text-white uppercase tracking-tight">All quiet in chat</h3>
-                    <p className="text-zinc-500 text-xl font-medium tracking-wide">No flagged messages to review.</p>
-                  </div>
-                ) : (
-                  <>
-                    <div className="flex items-center justify-between mb-8 px-2">
-                      <h2 className="text-2xl font-black text-white uppercase tracking-tight flex items-center gap-3">
-                        <span className="w-2 h-8 bg-blue-500 rounded-full" />
-                        Action Required
-                      </h2>
-                      <div className="bg-red-500 text-white px-5 py-2 rounded-full text-sm font-black uppercase tracking-widest shadow-[0_0_15px_rgba(239,68,68,0.5)]">
-                        {actions.length} Pending ({actionGroups.length} Users)
-                      </div>
-                    </div>
-                    <div className="space-y-6">
-                      {actionGroups.map((group) => (
-                        <ActionCard key={group[0].username} actions={group} onResolve={handleResolve} />
-                      ))}
-                    </div>
-                  </>
-                )}
+                <ModerationView
+                  messages={messages}
+                  actions={actions}
+                  platforms={systemStatus.platforms}
+                  streamConnected={streamConnected}
+                  onResolve={handleResolve}
+                  onModerate={handleQuickModerate}
+                  onOpenSettings={() => setActiveTab('settings')}
+                />
               </motion.div>
             )}
 
@@ -220,7 +222,7 @@ function App() {
                 transition={{ duration: 0.2 }}
                 className="h-[calc(100vh-8rem)]"
               >
-                <UserList users={users} onDeleteUser={handleDeleteUser} />
+                <UserList users={users} platforms={systemStatus.platforms} onDeleteUser={handleDeleteUser} />
               </motion.div>
             )}
 
@@ -232,7 +234,7 @@ function App() {
                 exit={{ opacity: 0, scale: 0.98 }}
                 transition={{ duration: 0.2 }}
               >
-                <Settings />
+                <Settings status={systemStatus} onSaved={fetchData} />
               </motion.div>
             )}
 
@@ -253,19 +255,22 @@ function App() {
                 </h2>
 
                 <div className="space-y-8">
-                  <div>
-                    <label className="block text-xs uppercase text-zinc-500 mb-3 font-black tracking-widest ml-1">Fake Username</label>
-                    <input
-                      className="w-full bg-zinc-800 border-2 border-transparent rounded-xl p-5 text-white font-bold focus:border-zinc-600 focus:outline-none transition-all placeholder:text-zinc-600 shadow-inner"
-                      value={debugUser}
-                      onChange={e => setDebugUser(e.target.value)}
-                      placeholder="Username..."
-                    />
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="col-span-2">
+                      <label className="block text-xs uppercase text-zinc-500 mb-3 font-black tracking-widest ml-1">Fake Username</label>
+                      <input className={inputClass} value={debugUser} onChange={e => setDebugUser(e.target.value)} placeholder="Username..." />
+                    </div>
+                    <div>
+                      <label className="block text-xs uppercase text-zinc-500 mb-3 font-black tracking-widest ml-1">Platform</label>
+                      <select className={`${inputClass} appearance-none`} value={debugPlatform} onChange={e => setDebugPlatform(e.target.value as Platform)}>
+                        {PLATFORMS.map(p => <option key={p} value={p}>{PLATFORM_META[p].label}</option>)}
+                      </select>
+                    </div>
                   </div>
                   <div>
                     <label className="block text-xs uppercase text-zinc-500 mb-3 font-black tracking-widest ml-1">Message Content</label>
                     <textarea
-                      className="w-full bg-zinc-800 border-2 border-transparent rounded-xl p-5 text-white font-bold h-40 focus:border-zinc-600 focus:outline-none transition-all resize-none placeholder:text-zinc-600 leading-relaxed shadow-inner"
+                      className={`${inputClass} h-40 resize-none leading-relaxed`}
                       value={debugMsg}
                       onChange={e => setDebugMsg(e.target.value)}
                       placeholder="Type a test message here..."
@@ -273,12 +278,7 @@ function App() {
                   </div>
                   <div>
                     <label className="block text-xs uppercase text-zinc-500 mb-3 font-black tracking-widest ml-1">Flag/Ban Reason</label>
-                    <input
-                      className="w-full bg-zinc-800 border-2 border-transparent rounded-xl p-5 text-white font-bold focus:border-zinc-600 focus:outline-none transition-all placeholder:text-zinc-600 shadow-inner"
-                      value={debugReason}
-                      onChange={e => setDebugReason(e.target.value)}
-                      placeholder="Reason..."
-                    />
+                    <input className={inputClass} value={debugReason} onChange={e => setDebugReason(e.target.value)} placeholder="Reason..." />
                   </div>
 
                   <div className="grid grid-cols-2 gap-6 pt-6">
@@ -289,6 +289,7 @@ function App() {
                       Force Flag
                     </button>
                   </div>
+                  <p className="text-xs text-zinc-500">Simulated messages go through the real AI pipeline; check the Moderation tab to see what happens to them.</p>
                 </div>
               </motion.div>
             )}

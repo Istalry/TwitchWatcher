@@ -1,19 +1,22 @@
 import React, { useState, useMemo } from 'react';
-import { type ChatUser } from '../types';
+import { EMPTY_STATUS, type ChatUser, type Platform, type PlatformStatus } from '../types';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Clock, Ban, User, Users, MessageSquare, Search, RotateCcw, Trash2 } from 'lucide-react';
+import { Clock, Ban, User, Users, MessageSquare, Search, RotateCcw, Trash2, StickyNote } from 'lucide-react';
+import { PlatformBadge } from './PlatformBadge';
+import { PLATFORM_META } from '../platformMeta';
 
 interface Props {
     users: ChatUser[];
-    onTest?: boolean; // For testing purposes to suppress excessive animations if needed
-    onDeleteUser?: (username: string) => void;
+    platforms?: Record<Platform, PlatformStatus>;
+    onDeleteUser?: (key: string) => void;
 }
 
-export const UserList: React.FC<Props> = ({ users, onDeleteUser }) => {
+export const UserList: React.FC<Props> = ({ users, platforms = EMPTY_STATUS.platforms, onDeleteUser }) => {
     const [selectedUser, setSelectedUser] = useState<string | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
 
-    const activeUser = users.find(u => u.username === selectedUser);
+    const activeUser = users.find(u => u.key === selectedUser);
+    const activeCaps = activeUser ? platforms[activeUser.platform]?.capabilities : undefined;
 
     const sortedAndFilteredUsers = useMemo(() => {
         let result = users;
@@ -21,7 +24,7 @@ export const UserList: React.FC<Props> = ({ users, onDeleteUser }) => {
         // Search
         if (searchQuery) {
             const lowerQuery = searchQuery.toLowerCase();
-            result = result.filter(u => u.username.toLowerCase().includes(lowerQuery));
+            result = result.filter(u => u.username.toLowerCase().includes(lowerQuery) || u.displayName?.toLowerCase().includes(lowerQuery));
         }
 
         // Sort by last message timestamp (descending)
@@ -34,24 +37,28 @@ export const UserList: React.FC<Props> = ({ users, onDeleteUser }) => {
         return result;
     }, [users, searchQuery]);
 
-    const handleModerate = async (e: React.MouseEvent, username: string, action: 'ban' | 'timeout' | 'unban') => {
+    const handleModerate = async (e: React.MouseEvent, user: ChatUser, action: 'ban' | 'timeout' | 'unban') => {
         e.stopPropagation();
-        if (!confirm(`Are you sure you want to ${action} ${username}?`)) return;
+        if (!confirm(`Are you sure you want to ${action} ${user.displayName} (${PLATFORM_META[user.platform].label})?`)) return;
         try {
-            await fetch(`/api/users/${username}/moderate`, {
+            const res = await fetch(`/api/users/${encodeURIComponent(user.key)}/moderate`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ action })
             });
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}));
+                alert(data.error || `Failed to ${action}`);
+            }
         } catch (err) {
             console.error('Failed to moderate', err);
         }
     };
 
-    const handleDelete = (username: string) => {
-        if (!confirm(`Are you sure you want to delete data for ${username}?`)) return;
+    const handleDelete = (user: ChatUser) => {
+        if (!confirm(`Are you sure you want to delete data for ${user.displayName}?`)) return;
         if (onDeleteUser) {
-            onDeleteUser(username);
+            onDeleteUser(user.key);
             setSelectedUser(null);
         }
     }
@@ -87,11 +94,13 @@ export const UserList: React.FC<Props> = ({ users, onDeleteUser }) => {
                             No users found
                         </div>
                     ) : (
-                        sortedAndFilteredUsers.map((u) => (
+                        sortedAndFilteredUsers.map((u) => {
+                            const caps = platforms[u.platform]?.capabilities;
+                            return (
                             <div
-                                key={u.username}
-                                onClick={() => setSelectedUser(u.username)}
-                                className={`p-3 rounded-xl flex items-center gap-3 cursor-pointer transition-all group border ${selectedUser === u.username
+                                key={u.key}
+                                onClick={() => setSelectedUser(u.key)}
+                                className={`p-3 rounded-xl flex items-center gap-3 cursor-pointer transition-all group border ${selectedUser === u.key
                                     ? 'bg-blue-600/10 border-blue-500/50 shadow-[inset_0_0_10px_rgba(37,99,235,0.2)]'
                                     : 'border-transparent hover:bg-white/5'
                                     }`}
@@ -99,15 +108,19 @@ export const UserList: React.FC<Props> = ({ users, onDeleteUser }) => {
                                 <div className="relative">
                                     <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold text-white shadow-lg ${u.status === 'banned' ? 'bg-red-500' : u.status === 'timed_out' ? 'bg-orange-500' : 'bg-zinc-700'
                                         }`}>
-                                        {u.username[0].toUpperCase()}
+                                        {(u.displayName || u.username)[0].toUpperCase()}
                                     </div>
                                     <div className={`absolute -bottom-1 -right-1 w-3 h-3 rounded-full border-2 border-[#18181b] ${u.status === 'banned' ? 'bg-red-500' : u.status === 'timed_out' ? 'bg-orange-500' : 'bg-green-500'
                                         }`} />
                                 </div>
 
                                 <div className="min-w-0 flex-1">
-                                    <div className={`font-bold text-sm truncate ${selectedUser === u.username ? 'text-white' : 'text-zinc-400 group-hover:text-zinc-200'}`}>
-                                        {u.username}
+                                    <div className={`font-bold text-sm truncate flex items-center gap-2 ${selectedUser === u.key ? 'text-white' : 'text-zinc-400 group-hover:text-zinc-200'}`}>
+                                        <span className="truncate">{u.displayName || u.username}</span>
+                                        <PlatformBadge platform={u.platform} />
+                                        {u.notes?.length > 0 && (
+                                            <span title={`${u.notes.length} AI note(s) below threshold`} className="w-2 h-2 rounded-full bg-amber-500 shrink-0" />
+                                        )}
                                     </div>
                                     <div className="text-[10px] text-zinc-600 font-mono truncate">
                                         {u.messages.length} messages
@@ -115,37 +128,44 @@ export const UserList: React.FC<Props> = ({ users, onDeleteUser }) => {
                                     </div>
                                 </div>
 
-                                {/* Actions */}
+                                {/* Actions (only what the platform can actually do) */}
                                 <div className="flex gap-1">
                                     {u.status === 'banned' ? (
-                                        <button
-                                            className="p-1.5 rounded hover:bg-green-500/20 text-zinc-600 hover:text-green-500 transition-colors"
-                                            title="Unban"
-                                            onClick={(e) => handleModerate(e, u.username, 'unban')}
-                                        >
-                                            <RotateCcw size={14} />
-                                        </button>
+                                        caps?.unban && (
+                                            <button
+                                                className="p-1.5 rounded hover:bg-green-500/20 text-zinc-600 hover:text-green-500 transition-colors"
+                                                title="Unban"
+                                                onClick={(e) => handleModerate(e, u, 'unban')}
+                                            >
+                                                <RotateCcw size={14} />
+                                            </button>
+                                        )
                                     ) : (
                                         <>
-                                            <button
-                                                className="p-1.5 rounded hover:bg-orange-500/20 text-zinc-600 hover:text-orange-500 transition-colors"
-                                                title="Timeout 10m"
-                                                onClick={(e) => handleModerate(e, u.username, 'timeout')}
-                                            >
-                                                <Clock size={14} />
-                                            </button>
-                                            <button
-                                                className="p-1.5 rounded hover:bg-red-500/20 text-zinc-600 hover:text-red-500 transition-colors"
-                                                title="Ban"
-                                                onClick={(e) => handleModerate(e, u.username, 'ban')}
-                                            >
-                                                <Ban size={14} />
-                                            </button>
+                                            {caps?.timeout && (
+                                                <button
+                                                    className="p-1.5 rounded hover:bg-orange-500/20 text-zinc-600 hover:text-orange-500 transition-colors"
+                                                    title="Timeout"
+                                                    onClick={(e) => handleModerate(e, u, 'timeout')}
+                                                >
+                                                    <Clock size={14} />
+                                                </button>
+                                            )}
+                                            {caps?.ban && (
+                                                <button
+                                                    className="p-1.5 rounded hover:bg-red-500/20 text-zinc-600 hover:text-red-500 transition-colors"
+                                                    title="Ban"
+                                                    onClick={(e) => handleModerate(e, u, 'ban')}
+                                                >
+                                                    <Ban size={14} />
+                                                </button>
+                                            )}
                                         </>
                                     )}
                                 </div>
                             </div>
-                        ))
+                            );
+                        })
                     )}
                 </div>
             </div>
@@ -155,7 +175,7 @@ export const UserList: React.FC<Props> = ({ users, onDeleteUser }) => {
                 <AnimatePresence mode="wait">
                     {activeUser ? (
                         <motion.div
-                            key={activeUser.username}
+                            key={activeUser.key}
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
                             exit={{ opacity: 0 }}
@@ -165,10 +185,13 @@ export const UserList: React.FC<Props> = ({ users, onDeleteUser }) => {
                             <div className="p-6 border-b border-white/5 flex justify-between items-start bg-gradient-to-r from-blue-900/10 to-transparent">
                                 <div className="flex items-center gap-4">
                                     <div className="w-16 h-16 rounded-2xl bg-zinc-800 flex items-center justify-center text-3xl font-black text-zinc-500 shadow-inner">
-                                        {activeUser.username[0].toUpperCase()}
+                                        {(activeUser.displayName || activeUser.username)[0].toUpperCase()}
                                     </div>
                                     <div>
-                                        <h2 className="text-2xl font-black text-white tracking-tight">{activeUser.username}</h2>
+                                        <h2 className="text-2xl font-black text-white tracking-tight flex items-center gap-3">
+                                            {activeUser.displayName || activeUser.username}
+                                            <PlatformBadge platform={activeUser.platform} size="sm" full />
+                                        </h2>
                                         <div className={`inline-flex items-center gap-2 px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wider ${activeUser.status === 'banned' ? 'bg-red-500/20 text-red-500' : activeUser.status === 'timed_out' ? 'bg-orange-500/20 text-orange-500' : 'bg-green-500/20 text-green-500'
                                             }`}>
                                             {activeUser.status?.replace('_', ' ') || 'ACTIVE'}
@@ -177,14 +200,14 @@ export const UserList: React.FC<Props> = ({ users, onDeleteUser }) => {
                                 </div>
                                 <div className="flex gap-2">
                                     <button
-                                        onClick={() => handleDelete(activeUser.username)}
+                                        onClick={() => handleDelete(activeUser)}
                                         className="bg-red-500/10 hover:bg-red-500/20 text-red-500 px-4 py-2 rounded-lg text-xs font-bold transition-colors flex items-center gap-2"
                                     >
                                         <Trash2 size={14} /> Delete Data
                                     </button>
-                                    {activeUser.status === 'banned' && (
+                                    {activeUser.status === 'banned' && activeCaps?.unban && (
                                         <button
-                                            onClick={(e) => handleModerate(e, activeUser.username, 'unban')}
+                                            onClick={(e) => handleModerate(e, activeUser, 'unban')}
                                             className="bg-green-500/10 hover:bg-green-500/20 text-green-500 px-4 py-2 rounded-lg text-xs font-bold transition-colors flex items-center gap-2"
                                         >
                                             <RotateCcw size={14} /> Unban
@@ -192,6 +215,24 @@ export const UserList: React.FC<Props> = ({ users, onDeleteUser }) => {
                                     )}
                                 </div>
                             </div>
+
+                            {/* AI notes: flags that stayed below the sensitivity threshold */}
+                            {activeUser.notes?.length > 0 && (
+                                <div className="px-6 py-3 border-b border-white/5 bg-amber-500/5">
+                                    <div className="text-[10px] uppercase tracking-widest font-black text-amber-400 flex items-center gap-2 mb-2">
+                                        <StickyNote size={12} /> Recent AI notes ({activeUser.notes.length})
+                                    </div>
+                                    <ul className="space-y-1">
+                                        {activeUser.notes.slice(-5).reverse().map(n => (
+                                            <li key={n.id} className="text-xs text-zinc-400 flex gap-2">
+                                                <span className="font-mono text-zinc-600 shrink-0">{new Date(n.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                                <span className="text-amber-500 font-bold uppercase shrink-0">sev {n.severity} · {n.category}</span>
+                                                <span className="truncate">{n.reason}</span>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            )}
 
                             {/* Chat History */}
                             <div className="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar bg-black/20">

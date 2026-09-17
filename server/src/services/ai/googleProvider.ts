@@ -1,7 +1,7 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { settingsStore } from '../../store/settings';
-import { ModerationResult } from '../../store/types';
-import { AIProvider } from './aiProvider';
+import { ModerationResult, Platform } from '../../store/types';
+import { AIProvider, parseVerdict } from './aiProvider';
 import { buildModerationPrompt } from './promptBuilder';
 
 export class GoogleProvider implements AIProvider {
@@ -21,40 +21,22 @@ export class GoogleProvider implements AIProvider {
         }
     }
 
-    public async analyzeMessage(message: string, history: string[] = []): Promise<ModerationResult> {
+    public async analyzeMessage(message: string, history: string[] = [], platform?: Platform): Promise<ModerationResult> {
         if (!this.model) {
-            console.error('Google AI Model not initialized (missing API Key?)');
-            return { flagged: false, reason: 'AI Config Error', suggestedAction: 'none' };
+            throw new Error('Google AI not initialized: missing API key');
         }
 
-        try {
-            const prompt = buildModerationPrompt(message, history);
-            console.log('--- Sending to Google AI ---');
-            console.log(prompt);
+        const prompt = buildModerationPrompt(message, history, platform);
+        if (process.env.DEBUG_AI) console.log('--- Sending to Google AI ---\n' + prompt);
 
-            const result = await this.model.generateContent(prompt);
-            const responseText = result.response.text();
+        const result = await this.model.generateContent(prompt);
+        const responseText = result.response.text();
 
-            console.log('--- Google AI Response ---');
-            console.log(responseText);
+        if (process.env.DEBUG_AI) console.log('--- Google AI Response ---\n' + responseText);
 
-            // Clean up Markdown code blocks if present (e.g. ```json ... ```)
-            const cleanJson = responseText.replace(/```json\n?|\n?```/g, '').trim();
-
-            const parsed = JSON.parse(cleanJson);
-
-            return {
-                flagged: parsed.flagged,
-                reason: parsed.reason,
-                suggestedAction: parsed.suggestedAction,
-            };
-
-        } catch (err) {
-            console.error('Google AI Analysis Failed:', err);
-            // Fail open
-            return { flagged: false, reason: 'Analysis Failed', suggestedAction: 'none' };
-        }
+        return parseVerdict(responseText);
     }
+
     public async healthCheck(): Promise<boolean> {
         // For Google, we can't easily "ping" without cost or complexity.
         // We assume healthy if API Key is present and model initialized.

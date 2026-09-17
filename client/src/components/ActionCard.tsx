@@ -1,20 +1,27 @@
 import { motion } from 'framer-motion';
-import { type PendingAction } from '../types';
+import { type PendingAction, type PlatformCapabilities } from '../types';
+import { PlatformBadge } from './PlatformBadge';
+import { PLATFORM_META } from '../platformMeta';
 
 interface ActionCardProps {
     actions: PendingAction[];
+    capabilities?: PlatformCapabilities;
     onResolve: (ids: string[], resolution: 'approved' | 'discarded', banDuration?: string) => void;
 }
 
-export function ActionCard({ actions, onResolve }: ActionCardProps) {
+const FULL_CAPABILITIES: PlatformCapabilities = { ban: true, timeout: true, unban: true };
+
+export function ActionCard({ actions, capabilities = FULL_CAPABILITIES, onResolve }: ActionCardProps) {
     if (actions.length === 0) return null;
 
     // Use the first action for common details (username, etc.)
     const mainAction = actions[0];
     const actionIds = actions.map(a => a.id);
+    const canModerate = capabilities.ban || capabilities.timeout;
+    const maxSeverity = Math.max(...actions.map(a => a.severity ?? 0));
 
-    // Aggregate reasons
-    const distinctReasons = Array.from(new Set(actions.map(a => a.flaggedReason)));
+    // Aggregate reasons (a coalesced action carries several, joined with " | ")
+    const distinctReasons = Array.from(new Set(actions.flatMap(a => a.flaggedReason.split(' | '))));
 
     return (
         <motion.div
@@ -28,16 +35,27 @@ export function ActionCard({ actions, onResolve }: ActionCardProps) {
                 <div className="w-20 h-20 bg-red-500/5 rounded-full blur-2xl absolute -top-10 -right-10 pointer-events-none" />
             </div>
 
-            <div className="flex flex-col md:flex-row gap-6">
-                <div className="flex-1">
-                    <div className="flex items-center justify-between mb-4">
+            <div className="flex flex-col gap-4">
+                <div className="flex-1 min-w-0">
+                    <div className="flex items-start justify-between gap-3 mb-4">
                         <div className="flex items-center gap-3">
                             <div className="w-10 h-10 rounded-lg bg-red-500/10 flex items-center justify-center text-red-500 font-bold border border-red-500/20">
-                                {mainAction.username[0].toUpperCase()}
+                                {(mainAction.displayName || mainAction.username)[0].toUpperCase()}
                             </div>
-                            <div>
-                                <h3 className="text-white font-bold text-lg leading-tight">{mainAction.username}</h3>
+                            <div className="min-w-0">
+                                <h3 className="text-white font-bold text-lg leading-tight flex items-center gap-2 flex-wrap">
+                                    <span className="truncate">{mainAction.displayName || mainAction.username}</span>
+                                    <PlatformBadge platform={mainAction.platform} />
+                                </h3>
                                 <div className="flex flex-wrap gap-2 mt-1">
+                                    {maxSeverity > 0 && (
+                                        <div
+                                            title="AI severity (1-5)"
+                                            className={`text-xs uppercase tracking-wider font-bold px-2 py-0.5 rounded ${maxSeverity >= 5 ? 'bg-red-500 text-white' : maxSeverity >= 4 ? 'bg-red-500/20 text-red-400' : 'bg-orange-500/10 text-orange-400'}`}
+                                        >
+                                            Sev {maxSeverity}
+                                        </div>
+                                    )}
                                     {distinctReasons.map((reason, i) => (
                                         <div key={i} className="text-red-400 text-xs uppercase tracking-wider font-bold bg-red-500/5 px-2 py-0.5 rounded">
                                             {reason}
@@ -51,7 +69,7 @@ export function ActionCard({ actions, onResolve }: ActionCardProps) {
                                 </div>
                             </div>
                         </div>
-                        <div className="text-xs font-mono text-zinc-600 border border-zinc-800 px-2 py-1 rounded">
+                        <div className="text-xs font-mono text-zinc-600 border border-zinc-800 px-2 py-1 rounded shrink-0">
                             {actions.length > 1 ? `${actions.length} ITEMS` : `ID: ${mainAction.id.slice(0, 6)}`}
                         </div>
                     </div>
@@ -61,7 +79,7 @@ export function ActionCard({ actions, onResolve }: ActionCardProps) {
                             <div key={action.id} className="bg-[#09090b] p-4 rounded-xl border border-white/5 relative">
                                 <div className="absolute top-0 left-0 w-1 h-full bg-red-500/20 rounded-l-xl" />
                                 <div className="flex justify-between items-start gap-4">
-                                    <p className="text-zinc-300 text-base leading-relaxed pl-3 font-medium">"{action.messageContent}"</p>
+                                    <p className="text-zinc-300 text-base leading-relaxed pl-3 font-medium break-words min-w-0">"{action.messageContent}"</p>
                                     <span className="text-[10px] text-zinc-600 font-mono whitespace-nowrap pt-1">
                                         {new Date(action.timestamp).toLocaleTimeString()}
                                     </span>
@@ -71,7 +89,7 @@ export function ActionCard({ actions, onResolve }: ActionCardProps) {
                     </div>
                 </div>
 
-                <div className="flex md:flex-col gap-3 justify-center min-w-[140px]">
+                <div className="flex flex-wrap gap-3">
                     <button
                         onClick={() => onResolve(actionIds, 'discarded')}
                         className="flex-1 px-4 py-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white font-bold text-sm transition-all border border-transparent hover:border-zinc-600"
@@ -79,19 +97,29 @@ export function ActionCard({ actions, onResolve }: ActionCardProps) {
                         Dismiss All
                     </button>
 
-                    <button
-                        onClick={() => onResolve(actionIds, 'approved', '')}
-                        className="flex-1 px-4 py-3 rounded-xl bg-orange-500/10 hover:bg-orange-500/20 text-orange-500 font-bold text-sm transition-all border border-orange-500/20 hover:border-orange-500/50"
-                    >
-                        Timeout
-                    </button>
+                    {capabilities.timeout && (
+                        <button
+                            onClick={() => onResolve(actionIds, 'approved', '')}
+                            className="flex-1 px-4 py-3 rounded-xl bg-orange-500/10 hover:bg-orange-500/20 text-orange-500 font-bold text-sm transition-all border border-orange-500/20 hover:border-orange-500/50"
+                        >
+                            Timeout
+                        </button>
+                    )}
 
-                    <button
-                        onClick={() => onResolve(actionIds, 'approved', 'permanent')}
-                        className="flex-1 px-4 py-3 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-500 font-bold text-sm transition-all border border-red-500/20 hover:border-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.1)] hover:shadow-[0_0_20px_rgba(239,68,68,0.2)]"
-                    >
-                        BAN USER
-                    </button>
+                    {capabilities.ban && (
+                        <button
+                            onClick={() => onResolve(actionIds, 'approved', 'permanent')}
+                            className="flex-1 px-4 py-3 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-500 font-bold text-sm transition-all border border-red-500/20 hover:border-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.1)] hover:shadow-[0_0_20px_rgba(239,68,68,0.2)]"
+                        >
+                            BAN USER
+                        </button>
+                    )}
+
+                    {!canModerate && (
+                        <p className="w-full text-[10px] text-zinc-500 font-medium leading-snug">
+                            {PLATFORM_META[mainAction.platform].label} has no moderation API — handle this user in the {PLATFORM_META[mainAction.platform].label} app.
+                        </p>
+                    )}
                 </div>
             </div>
         </motion.div>

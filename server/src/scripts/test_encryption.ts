@@ -13,7 +13,7 @@ const main = async () => {
     const secret = "SuperSecretKey123";
     settingsStore.update(s => ({
         ...s,
-        twitch: { ...s.twitch, clientSecret: secret }
+        platforms: { ...s.platforms, twitch: { ...s.platforms.twitch, clientSecret: secret } }
     }));
 
     // 2. Read file directly to ensure it's encrypted
@@ -41,10 +41,10 @@ const main = async () => {
     // 3. Reload store and verify decryption
     console.log('[Test] Verifying Decryption via Store...');
     const loadedSettings = settingsStore.get();
-    if (loadedSettings.twitch.clientSecret === secret) {
+    if (loadedSettings.platforms.twitch.clientSecret === secret) {
         console.log('[Test] PASS: Store correctly decrypted the secret.');
     } else {
-        console.error('[Test] FAIL: Store failed to decrypt secret. Got:', loadedSettings.twitch.clientSecret);
+        console.error('[Test] FAIL: Store failed to decrypt secret. Got:', loadedSettings.platforms.twitch.clientSecret);
     }
 
     console.log('[Test] Test Complete.');

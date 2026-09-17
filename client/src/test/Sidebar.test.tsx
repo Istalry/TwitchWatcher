@@ -11,11 +11,12 @@ vi.stubGlobal('fetch', vi.fn(() =>
 describe('Sidebar', () => {
     it('renders all navigation tabs', () => {
         const mockFn = vi.fn();
-        render(<Sidebar activeTab="actions" setActiveTab={mockFn} />);
+        render(<Sidebar activeTab="moderation" setActiveTab={mockFn} />);
 
-        expect(screen.getByText('Actions')).toBeInTheDocument();
+        expect(screen.getByText('Moderation')).toBeInTheDocument();
         expect(screen.getByText('Live Users')).toBeInTheDocument();
         expect(screen.getByText('Debug')).toBeInTheDocument();
+        expect(screen.getByText('Settings')).toBeInTheDocument();
     });
 
     it('highlights the active tab', () => {
@@ -28,7 +29,7 @@ describe('Sidebar', () => {
 
     it('calls setActiveTab when a tab is clicked', () => {
         const mockFn = vi.fn();
-        render(<Sidebar activeTab="actions" setActiveTab={mockFn} />);
+        render(<Sidebar activeTab="moderation" setActiveTab={mockFn} />);
 
         fireEvent.click(screen.getByText('Live Users'));
         expect(mockFn).toHaveBeenCalledWith('users');

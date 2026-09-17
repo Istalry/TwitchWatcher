@@ -2,16 +2,21 @@ import express from 'express';
 import cors from 'cors';
 import os from 'os';
 import path from 'path';
-
-import { twitchBot } from './services/twitchClient';
-import { historyStore } from './store/history';
-import { actionQueue } from './store/actionQueue';
-import { falsePositiveStore } from './store/falsePositives';
-import { settingsStore } from './store/settings';
-import { authService } from './services/authService';
-import { aiService } from './services/ai/aiService';
-import open from 'open';
+import fs from 'fs';
 import crypto from 'crypto';
+import axios from 'axios';
+import open from 'open';
+
+import { historyStore } from './store/history';
+import { actionQueue, ActionEvent } from './store/actionQueue';
+import { settingsStore, AppSettings, PlatformSettingsMap } from './store/settings';
+import { ChatMessage, PLATFORMS, Platform, userKey } from './store/types';
+import { authService } from './services/authService';
+import { googleAuth } from './services/googleAuth';
+import { aiService } from './services/ai/aiService';
+import { analysisQueue } from './services/analysisQueue';
+import { chatHub } from './services/chatHub';
+import { platformRegistry, isPlatform } from './platforms/registry';
 
 const app = express();
 app.use(cors());
@@ -20,6 +25,16 @@ app.use(express.json());
 // Serve static files from 'public' directory (Client Build)
 app.use(express.static(path.join(__dirname, '../public')));
 
+const errorMessage = (err: unknown) => (err instanceof Error ? err.message : String(err));
+
+/** First enabled platform that still needs an OAuth round-trip, if any. */
+function nextAuthUrl(): string | null {
+    const p = settingsStore.get().platforms;
+    if (p.twitch.enabled && p.twitch.clientId && !p.twitch.accessToken) return '/auth/twitch';
+    if (p.youtube.enabled && p.youtube.clientId && !p.youtube.accessToken) return '/auth/youtube';
+    return null;
+}
+
 // --- SETUP ROUTES ---
 
 app.get('/api/setup/status', (req, res) => {
@@ -27,37 +42,40 @@ app.get('/api/setup/status', (req, res) => {
 });
 
 app.post('/api/setup', (req, res) => {
-    const { twitch, ai } = req.body;
+    const { platforms = {}, ai } = req.body as { platforms?: Partial<PlatformSettingsMap>; ai?: AppSettings['ai'] };
 
-    // Validate basics
-    if (!twitch || !twitch.username || !twitch.channel || !twitch.clientId || !twitch.clientSecret) {
-        return res.status(400).json({ error: 'Missing required Twitch settings' });
+    // Validate only the platforms the user chose to enable. Enabling none is allowed.
+    if (platforms.twitch?.enabled) {
+        const t = platforms.twitch;
+        if (!t.username || !t.channel || !t.clientId || !t.clientSecret) {
+            return res.status(400).json({ error: 'Twitch: username, channel, Client ID and Client Secret are required' });
+        }
+    }
+    if (platforms.youtube?.enabled) {
+        const y = platforms.youtube;
+        if (!y.channel && !y.videoIdOverride) {
+            return res.status(400).json({ error: 'YouTube: channel handle is required' });
+        }
+    }
+    if (platforms.tiktok?.enabled && !platforms.tiktok.username) {
+        return res.status(400).json({ error: 'TikTok: username is required' });
     }
 
     settingsStore.update(s => ({
         ...s,
-        twitch: {
-            ...s.twitch,
-            ...twitch
+        platforms: {
+            twitch: { ...s.platforms.twitch, ...(platforms.twitch || {}) },
+            youtube: { ...s.platforms.youtube, ...(platforms.youtube || {}) },
+            tiktok: { ...s.platforms.tiktok, ...(platforms.tiktok || {}) },
         },
-        ai: {
-            ...s.ai,
-            ...ai
-        },
-        isSetupComplete: true
+        ai: { ...s.ai, ...(ai || {}) },
+        isSetupComplete: true,
     }));
 
     console.log('Setup configuration received via UI.');
+    platformRegistry.connectAll().catch(e => console.error('Connection attempt after setup failed:', e));
 
-    // Attempt connection immediately if credentials look okay
-    if (twitch.username && twitch.channel) {
-        console.log('Setup complete. Attempting to connect to Twitch...');
-        twitchBot.connect().catch(e => console.error('Immediate connection attempt failed:', e));
-    } else {
-        console.log('Setup saved, but missing critical Twitch info. Waiting for auth.');
-    }
-
-    res.json({ success: true });
+    res.json({ success: true, nextAuthUrl: nextAuthUrl() });
 });
 
 app.get('/api/status', async (req, res) => {
@@ -65,28 +83,25 @@ app.get('/api/status', async (req, res) => {
     const aiHealth = await aiService.healthCheck();
 
     res.json({
-        twitch: {
-            connected: twitchBot.isConnected,
-            channel: settings.twitch.channel || 'None'
-        },
         ai: {
             online: aiHealth,
             provider: settings.ai.provider,
-            model: settings.ai.model
-        }
+            model: settings.ai.model,
+            lastError: aiService.lastError,
+            ...analysisQueue.stats(),
+        },
+        platforms: platformRegistry.statuses(),
     });
 });
 
-// --- ROUTES ---
+// --- AUTH ROUTES ---
 
-// 0. Auth Routes
 app.get('/auth/twitch', (req, res) => {
-    const settings = settingsStore.get().twitch;
+    const settings = settingsStore.get().platforms.twitch;
     if (!settings.clientId) {
-        return res.status(400).send('Setup incomplete: Missing Client ID.');
+        return res.status(400).send('Setup incomplete: Missing Twitch Client ID.');
     }
-    const authUrl = authService.getAuthUrl();
-    res.redirect(authUrl);
+    res.redirect(authService.getAuthUrl());
 });
 
 app.get('/auth/twitch/callback', async (req, res) => {
@@ -95,111 +110,253 @@ app.get('/auth/twitch/callback', async (req, res) => {
     if (error) {
         return res.status(400).send(`Authentication failed: ${error}`);
     }
-
     if (!code || typeof code !== 'string') {
         return res.status(400).send('Invalid code returned from Twitch');
     }
 
     try {
         await authService.exchangeCodeForToken(code);
-        // Re-connect bot with new token
-        await twitchBot.connect();
-
-        res.redirect('/');
+        await platformRegistry.get('twitch').connect(); // Re-connect bot with new token
+        res.redirect(nextAuthUrl() || '/');
     } catch (err) {
         res.status(500).send('Failed to exchange code for token. Check server logs.');
     }
-
 });
 
-// 1. Get All Users
+app.get('/auth/youtube', (req, res) => {
+    const settings = settingsStore.get().platforms.youtube;
+    if (!settings.clientId) {
+        return res.status(400).send('Setup incomplete: Missing Google OAuth Client ID.');
+    }
+    res.redirect(googleAuth.getAuthUrl());
+});
+
+app.get('/auth/youtube/callback', async (req, res) => {
+    const { code, error } = req.query;
+
+    if (error) {
+        return res.status(400).send(`Authentication failed: ${error}`);
+    }
+    if (!code || typeof code !== 'string') {
+        return res.status(400).send('Invalid code returned from Google');
+    }
+
+    try {
+        await googleAuth.exchangeCodeForToken(code);
+        res.redirect(nextAuthUrl() || '/');
+    } catch (err) {
+        res.status(500).send('Failed to exchange code for token. Check server logs.');
+    }
+});
+
+// --- USERS ---
+
 app.get('/api/users', (req, res) => {
-    const users = historyStore.getAllUsers();
-    res.json(users);
+    res.json(historyStore.getAllUsers());
 });
 
-// 2. Get Specific User Messages
-app.get('/api/users/:username', (req, res) => {
-    const user = historyStore.getUser(req.params.username);
+app.get('/api/users/:key', (req, res) => {
+    const user = historyStore.getUser(req.params.key);
     if (!user) return res.status(404).json({ error: 'User not found' });
     res.json(user);
 });
 
-// 3. Get Pending Actions
+// Manual Moderation (from Live Users / Live Chat)
+app.post('/api/users/:key/moderate', async (req, res) => {
+    const { key } = req.params;
+    const { action } = req.body as { action: 'ban' | 'timeout' | 'unban' };
+
+    const user = historyStore.getUser(key);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const platform = platformRegistry.get(user.platform);
+    if (!['ban', 'timeout', 'unban'].includes(action)) {
+        return res.status(400).json({ error: 'Invalid action' });
+    }
+    if (!platform.capabilities[action]) {
+        return res.status(400).json({ error: `${user.platform} has no moderation API for "${action}"` });
+    }
+
+    try {
+        if (action === 'ban') {
+            await platform.ban(user.userId, 'Manual Ban');
+        } else if (action === 'timeout') {
+            const duration = settingsStore.get().defaultTimeoutDuration || 600;
+            await platform.timeout(user.userId, duration, 'Manual Timeout');
+        } else {
+            await platform.unban(user.userId);
+        }
+        res.json({ success: true, message: `User ${action}ed` });
+    } catch (err) {
+        console.error(`Manual ${action} failed for ${key}:`, errorMessage(err));
+        res.status(500).json({ error: `Failed to ${action}: ${errorMessage(err)}` });
+    }
+});
+
+app.delete('/api/users', (req, res) => {
+    historyStore.clearAll();
+    res.json({ success: true, message: 'All user data cleared' });
+});
+
+app.delete('/api/users/:key', (req, res) => {
+    historyStore.deleteUser(req.params.key);
+    res.json({ success: true, message: `User ${req.params.key} deleted` });
+});
+
+// --- ACTIONS ---
+
 app.get('/api/actions', (req, res) => {
     res.json(actionQueue.getPending());
 });
 
-// 4. Resolve Action (Approve/Discard)
+// Resolve Action (Approve/Discard)
 app.post('/api/actions/:id/resolve', async (req, res) => {
     const { id } = req.params;
     const { resolution, banDuration } = req.body; // resolution: 'approved' | 'discarded'
 
     const action = actionQueue.get(id);
     if (!action) return res.status(404).json({ error: 'Action not found' });
-
-    actionQueue.resolve(id, resolution);
+    if (action.status !== 'pending') return res.status(409).json({ error: 'Action already resolved' });
 
     if (resolution === 'discarded') {
-        // Add to false positives
-        falsePositiveStore.add(action.messageContent);
-        return res.json({ success: true, message: 'Action discarded, learned as false positive.' });
+        actionQueue.resolve(id, 'discarded');
+        return res.json({ success: true, executed: false, message: 'Action dismissed.' });
     }
 
-    if (resolution === 'approved') {
-        // Execute Ban/Timeout
-        if (banDuration === 'permanent') {
-            await twitchBot.banUser(action.username, `Moderated: ${action.flaggedReason}`);
+    if (resolution !== 'approved') {
+        return res.status(400).json({ error: 'Invalid resolution' });
+    }
+
+    const platform = platformRegistry.get(action.platform);
+    const permanent = banDuration === 'permanent';
+    const capability = permanent ? 'ban' : 'timeout';
+
+    if (!platform.capabilities[capability]) {
+        // e.g. TikTok: nothing we can execute, but the review is done.
+        actionQueue.resolve(id, 'approved');
+        return res.json({ success: true, executed: false, message: `${action.platform} has no moderation API — handle this user in the ${action.platform} app.` });
+    }
+
+    try {
+        const reason = `Moderated: ${action.flaggedReason}`;
+        if (permanent) {
+            await platform.ban(action.userId, reason);
         } else {
             // Default to settings value if not specified or parsed
             const duration = parseInt(banDuration) || settingsStore.get().defaultTimeoutDuration || 600;
-            await twitchBot.timeoutUser(action.username, duration, `Moderated: ${action.flaggedReason}`);
+            await platform.timeout(action.userId, duration, reason);
         }
-        return res.json({ success: true, message: 'Action approved and executed.' });
-    }
-
-    res.status(400).json({ error: 'Invalid resolution' });
-});
-
-// 5. Manual Moderation (from Live Users)
-app.post('/api/users/:username/moderate', async (req, res) => {
-    const { username } = req.params;
-    const { action } = req.body; // 'ban' | 'timeout'
-
-    try {
-        if (action === 'ban') {
-            await twitchBot.banUser(username, 'Manual Ban');
-        } else if (action === 'timeout') {
-            const duration = settingsStore.get().defaultTimeoutDuration || 600;
-            await twitchBot.timeoutUser(username, duration, 'Manual Timeout');
-        } else if (action === 'unban') {
-            await twitchBot.unbanUser(username);
-        } else {
-            return res.status(400).json({ error: 'Invalid action' });
-        }
-        res.json({ success: true, message: `User ${action}ed` });
+        actionQueue.resolve(id, 'approved'); // only after the platform call succeeded, so a failure can be retried
+        res.json({ success: true, executed: true, message: 'Action approved and executed.' });
     } catch (err) {
-        res.status(500).json({ error: 'Failed to execute moderation' });
+        console.error(`Failed to execute ${capability} on ${action.platform}:`, errorMessage(err));
+        res.status(500).json({ error: `Failed to execute ${capability}: ${errorMessage(err)}` });
     }
 });
 
-// 6. Shutdown
+// --- LIVE CHAT ---
+
+app.get('/api/chat/recent', (req, res) => {
+    const limit = Math.min(500, parseInt(String(req.query.limit)) || 200);
+    res.json(chatHub.recent(limit));
+});
+
+// Server-Sent Events: pushes chat messages and action-queue changes as they happen.
+app.get('/api/chat/stream', (req, res) => {
+    res.set({
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'X-Accel-Buffering': 'no',
+    });
+    res.flushHeaders();
+
+    const send = (event: string, data: unknown) => {
+        res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+    const onMessage = (msg: ChatMessage) => send('message', msg);
+    const onAction = (evt: ActionEvent) => send('action', evt);
+
+    chatHub.on('message', onMessage);
+    actionQueue.on('change', onAction);
+    const ping = setInterval(() => res.write(': ping\n\n'), 15000);
+    send('ready', { pending: actionQueue.getPending().length });
+
+    req.on('close', () => {
+        clearInterval(ping);
+        chatHub.off('message', onMessage);
+        actionQueue.off('change', onAction);
+    });
+});
+
+// --- SHUTDOWN ---
+
 app.post('/api/shutdown', (req, res) => {
     console.log('Shutdown requested...');
     res.json({ message: 'Server shutting down...' });
-    setTimeout(() => {
+    setTimeout(async () => {
+        historyStore.flush();
+        await platformRegistry.disconnectAll();
         process.exit(0);
     }, 1000);
 });
 
-// 7. Debug Endpoints
-app.post('/api/debug/message', async (req, res) => {
-    const { username, message } = req.body;
-    await twitchBot.simulateMessage(username, message);
+// --- DEBUG ---
+
+app.post('/api/debug/message', (req, res) => {
+    const { username, message, platform } = req.body;
+    const p: Platform = isPlatform(platform) ? platform : 'twitch';
+    const name = String(username || 'DebugUser');
+    chatHub.publish({
+        platform: p,
+        userId: name.toLowerCase(),
+        username: name.toLowerCase(),
+        displayName: name,
+        content: String(message || ''),
+        timestamp: Date.now(),
+        messageId: crypto.randomUUID(),
+        role: 'viewer',
+    });
     res.json({ success: true, message: 'Message simulated' });
 });
 
-// 10. System Network Info
+app.post('/api/debug/flag', (req, res) => {
+    const { username, message, reason, platform } = req.body;
+    const p: Platform = isPlatform(platform) ? platform : 'twitch';
+    const name = String(username || 'DebugUser');
+    const userId = name.toLowerCase();
+    // Put the message in the feed too so the card has something to highlight.
+    const stored = chatHub.publish({
+        platform: p,
+        userId,
+        username: userId,
+        displayName: name,
+        content: String(message || ''),
+        timestamp: Date.now(),
+        messageId: crypto.randomUUID(),
+        role: 'broadcaster', // skipped by the analyzer so the AI doesn't double-flag it
+    });
+    actionQueue.addOrAppend({
+        id: crypto.randomUUID(),
+        platform: p,
+        userId,
+        userKey: userKey(p, userId),
+        username: userId,
+        displayName: name,
+        messageContent: stored.content,
+        messageIds: [stored.id],
+        flaggedReason: reason || 'Manual Debug Flag',
+        category: 'other',
+        severity: 3,
+        suggestedAction: 'timeout',
+        timestamp: Date.now(),
+        status: 'pending',
+    });
+    res.json({ success: true, message: 'Debug action created' });
+});
+
+// --- SYSTEM ---
+
 app.get('/api/system/network', (req, res) => {
     const nets = os.networkInterfaces();
     let localIp = 'localhost';
@@ -217,22 +374,7 @@ app.get('/api/system/network', (req, res) => {
     res.json({ ip: localIp });
 });
 
-app.post('/api/debug/flag', (req, res) => {
-    const { username, message, reason } = req.body;
-    actionQueue.add({
-        id: crypto.randomUUID(),
-        username,
-        messageContent: message,
-        flaggedReason: reason || 'Manual Debug Flag',
-        suggestedAction: 'timeout',
-        timestamp: Date.now(),
-        status: 'pending'
-    });
-    res.json({ success: true, message: 'Debug action created' });
-});
-
-// 11. Google Model Listing
-import axios from 'axios';
+// Google Model Listing
 app.get('/api/ai/models/google', async (req, res) => {
     // API KEY source: Query param OR settings
     const apiKey = (req.query.key as string) || settingsStore.get().ai.apiKey;
@@ -257,25 +399,42 @@ app.get('/api/ai/models/google', async (req, res) => {
     }
 });
 
-// 8. Settings
+// --- SETTINGS ---
+
 app.get('/api/settings', (req, res) => {
     res.json(settingsStore.get());
 });
 
-app.put('/api/settings', (req, res) => {
-    const { aiLanguage, defaultTimeoutDuration, twitch, ai } = req.body;
-
-    // Using a function updater to merge deeply if needed, but here simple spread is ok-ish 
-    // provided we handle the nested objects carefully.
-    // The previous implementation was shallow. Let's make it robust.
+app.put('/api/settings', async (req, res) => {
+    const { aiLanguage, defaultTimeoutDuration, moderation, platforms, ai } = req.body as Partial<AppSettings>;
+    const before = settingsStore.get().platforms;
 
     settingsStore.update(current => {
         const next = { ...current };
         if (aiLanguage) next.aiLanguage = aiLanguage;
         if (defaultTimeoutDuration) next.defaultTimeoutDuration = Number(defaultTimeoutDuration);
-
-        if (twitch) {
-            next.twitch = { ...next.twitch, ...twitch };
+        if (moderation) {
+            next.moderation = {
+                ...next.moderation,
+                ...moderation,
+                categories: { ...next.moderation.categories, ...(moderation.categories || {}) },
+            };
+        }
+        if (platforms) {
+            for (const id of PLATFORMS) {
+                const incoming = (platforms as Partial<PlatformSettingsMap>)[id];
+                if (!incoming) continue;
+                const merged = { ...next.platforms[id], ...incoming } as PlatformSettingsMap[typeof id];
+                // New OAuth client → old tokens are useless.
+                if ('clientId' in merged && 'clientId' in before[id]) {
+                    const prev = before[id] as { clientId: string; clientSecret: string };
+                    if (merged.clientId !== prev.clientId || merged.clientSecret !== prev.clientSecret) {
+                        delete (merged as { accessToken?: string }).accessToken;
+                        delete (merged as { refreshToken?: string }).refreshToken;
+                    }
+                }
+                (next.platforms as unknown as Record<string, unknown>)[id] = merged;
+            }
         }
         if (ai) {
             next.ai = { ...next.ai, ...ai };
@@ -283,19 +442,15 @@ app.put('/api/settings', (req, res) => {
         return next;
     });
 
-    res.json({ success: true, settings: settingsStore.get() });
-});
+    // (Re)connect platforms whose configuration changed so Settings takes effect without a restart.
+    const after = settingsStore.get().platforms;
+    for (const id of PLATFORMS) {
+        if (JSON.stringify(before[id]) !== JSON.stringify(after[id])) {
+            platformRegistry.get(id).connect().catch(e => console.error(`[${id}] reconnect failed:`, e));
+        }
+    }
 
-// 9. User Management
-app.delete('/api/users', (req, res) => {
-    historyStore.clearAll();
-    res.json({ success: true, message: 'All user data cleared' });
-});
-
-app.delete('/api/users/:username', (req, res) => {
-    const { username } = req.params;
-    historyStore.deleteUser(username);
-    res.json({ success: true, message: `User ${username} deleted` });
+    res.json({ success: true, settings: settingsStore.get(), nextAuthUrl: nextAuthUrl() });
 });
 
 // Fallback for SPA routing
@@ -304,13 +459,15 @@ app.get('*', (req, res) => {
     if (req.path.startsWith('/api/') || req.path.startsWith('/auth/')) {
         return res.status(404).json({ error: 'Not Found' });
     }
-    // Otherwise serve index.html
     const indexPath = path.join(__dirname, '../public/index.html');
-    if (os.platform() === 'win32' || true) { // Always try to serve if exists
-        res.sendFile(indexPath);
+    if (!fs.existsSync(indexPath)) {
+        // Dev mode: the client is served by Vite, not from server/public.
+        return res.status(404).type('text/plain').send(
+            'No built client found in server/public. In development open the Vite dev server (http://localhost:5173); for a packaged build run build_exe.bat.'
+        );
     }
+    res.sendFile(indexPath);
 });
-
 
 const start = async () => {
     try {
@@ -320,17 +477,18 @@ const start = async () => {
             const url = `http://localhost:${PORT}`;
             console.log(`Server running on ${url}`);
 
-            // Auto-open browser
-            try {
-                await open(url);
-            } catch (e) {
-                console.error('Failed to open browser:', e);
+            // Auto-open browser (set NO_BROWSER=1 to skip, e.g. when a dev client is already open)
+            if (!process.env.NO_BROWSER && !process.argv.includes('--no-browser')) {
+                try {
+                    await open(url);
+                } catch (e) {
+                    console.error('Failed to open browser:', e);
+                }
             }
 
-            // Try to connect Bot if setup is complete
             if (settingsStore.get().isSetupComplete) {
-                console.log('Setup complete, connecting to Twitch...');
-                await twitchBot.connect();
+                console.log('Setup complete, connecting enabled platforms...');
+                await platformRegistry.connectAll();
             } else {
                 console.log('Setup incomplete. Waiting for user configuration via UI.');
             }
@@ -341,3 +499,4 @@ const start = async () => {
 };
 
 start();
+

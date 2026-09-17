@@ -1,15 +1,46 @@
-import { useState, useEffect } from 'react';
-import { Save, Trash2, Globe, Twitch as TwitchIcon, ChevronDown } from 'lucide-react';
-import { type AppSettings } from '../types';
+import { useState, useEffect, useCallback } from 'react';
+import { Save, Trash2, Globe, ChevronDown, Radio, Shield } from 'lucide-react';
+import {
+    DEFAULT_PLATFORM_SETTINGS, EMPTY_STATUS, MODERATION_CATEGORIES,
+    type AppSettings, type ModerationCategory, type Sensitivity, type SystemStatus,
+} from '../types';
 import { SecureInput } from './SecureInput';
+import { TwitchCard, YouTubeCard, TikTokCard } from './platforms/PlatformCards';
 
-export function Settings() {
+interface Props {
+    status?: SystemStatus;
+    onSaved?: () => void;
+}
+
+const SENSITIVITY_OPTIONS: { id: Sensitivity; label: string; hint: string }[] = [
+    { id: 'lenient', label: 'Lenient', hint: 'Only clear-cut violations reach the queue (severity 4+).' },
+    { id: 'balanced', label: 'Balanced', hint: 'What a reasonable moderator would act on (severity 3+).' },
+    { id: 'strict', label: 'Strict', hint: 'Borderline cases too (severity 2+). Expect more cards.' },
+];
+
+const CATEGORY_LABELS: Record<ModerationCategory, string> = {
+    hate: 'Hate speech',
+    harassment: 'Harassment',
+    threat: 'Threats / doxxing',
+    spam: 'Spam & scams',
+    vulgarity: 'Vulgarity / sexual',
+    other: 'Other',
+};
+
+const ALWAYS_ON: ModerationCategory[] = ['hate', 'threat'];
+
+export function Settings({ status = EMPTY_STATUS, onSaved }: Props) {
     const [settings, setSettings] = useState<AppSettings>({
         isSetupComplete: true,
         aiLanguage: 'English',
         defaultTimeoutDuration: 600,
-        twitch: { username: '', channel: '', clientId: '', clientSecret: '' },
-        ai: { provider: 'ollama', model: 'gemma-3-27b-it' }
+        moderation: {
+            sensitivity: 'balanced',
+            categories: { hate: true, harassment: true, threat: true, spam: true, vulgarity: true, other: true },
+            skipTrustedRoles: true,
+        },
+        platforms: DEFAULT_PLATFORM_SETTINGS,
+        ai: { provider: 'ollama', model: 'gemma3:4b' }
     });
     const [isLoading, setIsLoading] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
@@ -18,11 +49,11 @@ export function Settings() {
     const [availableModels, setAvailableModels] = useState<string[]>(['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-2.0-flash-exp']);
     const [fetchingModels, setFetchingModels] = useState(false);
 
-    const fetchGoogleModels = async (key: string) => {
+    const fetchGoogleModels = useCallback(async (key: string) => {
         if (!key || key.length < 10) return;
         setFetchingModels(true);
         try {
-            const res = await fetch(`/api/ai/models/google?key=${key}`);
+            const res = await fetch(`/api/ai/models/google?key=${encodeURIComponent(key)}`);
             if (res.ok) {
                 const models = await res.json();
                 if (models && models.length > 0) {
@@ -34,17 +65,13 @@ export function Settings() {
         } finally {
             setFetchingModels(false);
         }
-    };
-
-    useEffect(() => {
-        fetchSettings();
     }, []);
 
-    const fetchSettings = async () => {
+    const fetchSettings = useCallback(async () => {
         setIsLoading(true);
         try {
             const res = await fetch('/api/settings');
-            const data = await res.json();
+            const data: AppSettings = await res.json();
             setSettings(data);
 
             // Auto-fetch models if using Google
@@ -56,21 +83,32 @@ export function Settings() {
         } finally {
             setIsLoading(false);
         }
-    };
+    }, [fetchGoogleModels]);
+
+    useEffect(() => {
+        fetchSettings();
+    }, [fetchSettings]);
 
     const handleSave = async () => {
         setIsSaving(true);
         try {
-            // Use PUT for updates as defined in server
-            await fetch('/api/settings', {
+            const res = await fetch('/api/settings', {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(settings)
             });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Save failed');
+            onSaved?.();
+            if (data.nextAuthUrl && confirm('Settings saved. A platform still needs to be connected to your account — do it now?')) {
+                window.location.href = data.nextAuthUrl;
+                return;
+            }
             alert('Settings saved successfully!');
+            fetchSettings();
         } catch (err) {
             console.error('Failed to save settings', err);
-            alert('Failed to save settings.');
+            alert(err instanceof Error ? err.message : 'Failed to save settings.');
         } finally {
             setIsSaving(false);
         }
@@ -83,58 +121,130 @@ export function Settings() {
             const res = await fetch('/api/users', { method: 'DELETE' });
             if (res.ok) {
                 alert('All data cleared.');
+                onSaved?.();
             }
         } catch (err) {
             console.error('Failed to clear data', err);
         }
     };
 
-    const updateTwitch = (key: keyof AppSettings['twitch'], val: string) => {
-        setSettings(prev => ({ ...prev, twitch: { ...prev.twitch, [key]: val } }));
-    };
-
     const updateAi = (key: keyof AppSettings['ai'], val: string) => {
         setSettings(prev => ({ ...prev, ai: { ...prev.ai, [key]: val } }));
     };
 
+    const updateModeration = (patch: Partial<AppSettings['moderation']>) => {
+        setSettings(prev => ({ ...prev, moderation: { ...prev.moderation, ...patch } }));
+    };
+
+    const toggleCategory = (c: ModerationCategory, on: boolean) => {
+        updateModeration({ categories: { ...settings.moderation.categories, [c]: on } });
+    };
+
     if (isLoading) return <div className="text-white text-center mt-20">Loading Settings...</div>;
+
+    const inputClass = 'w-full bg-zinc-800 border-2 border-transparent rounded-xl p-4 text-white font-bold focus:border-zinc-600 outline-none';
+    const labelClass = 'block text-xs uppercase text-zinc-500 mb-2 font-black tracking-widest';
 
     return (
         <div className="bg-[#18181b] rounded-3xl border border-white/10 p-12 max-w-3xl mx-auto shadow-2xl mt-8 space-y-12 mb-20">
-            {/* AI Config */}
+            {/* Moderation policy */}
             <div>
-                <h2 className="text-3xl font-black mb-2 flex items-center gap-5 text-white uppercase tracking-tight">
-                    <div className="bg-zinc-800 p-4 rounded-xl">
-                        <Globe className="text-zinc-400" size={32} />
-                    </div>
-                    AI & Moderation
-                </h2>
+                <SectionTitle icon={<Shield className="text-zinc-400" size={32} />}>Moderation</SectionTitle>
 
                 <div className="mt-8 ml-20 space-y-6">
                     <div>
-                        <label className="block text-xs uppercase text-zinc-500 mb-2 font-black tracking-widest">AI Language</label>
+                        <label className={labelClass}>Sensitivity</label>
+                        <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label="Sensitivity">
+                            {SENSITIVITY_OPTIONS.map(opt => {
+                                const active = settings.moderation.sensitivity === opt.id;
+                                return (
+                                    <button
+                                        key={opt.id}
+                                        role="radio"
+                                        aria-checked={active}
+                                        onClick={() => updateModeration({ sensitivity: opt.id })}
+                                        className={`p-3 rounded-xl border text-left transition-all ${active ? 'bg-blue-500/10 border-blue-500 text-white' : 'bg-zinc-800 border-transparent text-zinc-400 hover:bg-zinc-700'}`}
+                                    >
+                                        <div className="font-bold text-sm">{opt.label}</div>
+                                        <div className="text-[11px] text-zinc-500 mt-1 leading-snug">{opt.hint}</div>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                        <p className="text-[11px] text-zinc-500 mt-2">
+                            Flags below the threshold are kept as notes on the user instead of cards. Slurs and threats always reach the queue.
+                        </p>
+                    </div>
+
+                    <div>
+                        <label className={labelClass}>Categories to moderate</label>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                            {MODERATION_CATEGORIES.map(c => {
+                                const locked = ALWAYS_ON.includes(c);
+                                const on = locked || settings.moderation.categories[c] !== false;
+                                return (
+                                    <label
+                                        key={c}
+                                        className={`flex items-center gap-3 p-3 rounded-xl border text-sm font-bold cursor-pointer transition-all ${on ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-zinc-900 border-transparent text-zinc-500'} ${locked ? 'opacity-70 cursor-not-allowed' : ''}`}
+                                        title={locked ? 'Always moderated' : undefined}
+                                    >
+                                        <input
+                                            type="checkbox"
+                                            className="accent-blue-500"
+                                            checked={on}
+                                            disabled={locked}
+                                            onChange={e => toggleCategory(c, e.target.checked)}
+                                        />
+                                        {CATEGORY_LABELS[c]}
+                                    </label>
+                                );
+                            })}
+                        </div>
+                    </div>
+
+                    <label className="flex items-center gap-3 text-sm font-bold text-zinc-300 cursor-pointer">
                         <input
-                            className="w-full bg-zinc-800 border-2 border-transparent rounded-xl p-4 text-white font-bold focus:border-zinc-600 outline-none"
+                            type="checkbox"
+                            className="accent-blue-500"
+                            checked={settings.moderation.skipTrustedRoles}
+                            onChange={e => updateModeration({ skipTrustedRoles: e.target.checked })}
+                        />
+                        Don't analyze messages from the broadcaster and platform moderators
+                    </label>
+
+                    <div>
+                        <label className={labelClass}>Default Timeout (Seconds)</label>
+                        <input
+                            type="number"
+                            className={inputClass}
+                            value={settings.defaultTimeoutDuration}
+                            onChange={e => setSettings({ ...settings, defaultTimeoutDuration: parseInt(e.target.value) || 0 })}
+                        />
+                    </div>
+                </div>
+            </div>
+
+            <Divider />
+
+            {/* AI Config */}
+            <div>
+                <SectionTitle icon={<Globe className="text-zinc-400" size={32} />}>AI Engine</SectionTitle>
+
+                <div className="mt-8 ml-20 space-y-6">
+                    <div>
+                        <label className={labelClass}>AI Language</label>
+                        <input
+                            className={inputClass}
                             value={settings.aiLanguage}
                             onChange={e => setSettings({ ...settings, aiLanguage: e.target.value })}
                         />
                     </div>
 
-                    <div>
-                        <label className="block text-xs uppercase text-zinc-500 mb-2 font-black tracking-widest">Default Timeout (Seconds)</label>
-                        <input
-                            type="number"
-                            className="w-full bg-zinc-800 border-2 border-transparent rounded-xl p-4 text-white font-bold focus:border-zinc-600 outline-none"
-                            value={settings.defaultTimeoutDuration}
-                            onChange={e => setSettings({ ...settings, defaultTimeoutDuration: parseInt(e.target.value) || 0 })}
-                        />
-                    </div>
-
                     <div className="grid grid-cols-2 gap-4">
                         <div>
-                            <label className="block text-xs uppercase text-zinc-500 mb-2 font-black tracking-widest">Provider</label>
+                            <label className={labelClass}>Provider</label>
                             <select
-                                className="w-full bg-zinc-800 border-2 border-transparent rounded-xl p-4 text-white font-bold focus:border-zinc-600 outline-none appearance-none"
+                                className={`${inputClass} appearance-none`}
                                 value={settings.ai.provider}
                                 onChange={e => updateAi('provider', e.target.value)}
                             >
@@ -143,12 +253,12 @@ export function Settings() {
                             </select>
                         </div>
                         <div>
-                            <label className="block text-xs uppercase text-zinc-500 mb-2 font-black tracking-widest">Model</label>
+                            <label className={labelClass}>Model</label>
                             {settings.ai.provider === 'google' ? (
                                 <div className="flex gap-2">
                                     <div className="relative flex-1">
                                         <select
-                                            className="w-full bg-zinc-800 border-2 border-transparent rounded-xl p-4 text-white font-bold focus:border-zinc-600 outline-none appearance-none"
+                                            className={`${inputClass} appearance-none`}
                                             value={settings.ai.model}
                                             onChange={e => updateAi('model', e.target.value)}
                                         >
@@ -169,7 +279,7 @@ export function Settings() {
                                 </div>
                             ) : (
                                 <input
-                                    className="w-full bg-zinc-800 border-2 border-transparent rounded-xl p-4 text-white font-bold focus:border-zinc-600 outline-none"
+                                    className={inputClass}
                                     value={settings.ai.model}
                                     onChange={e => updateAi('model', e.target.value)}
                                 />
@@ -179,7 +289,7 @@ export function Settings() {
 
                     {settings.ai.provider === 'google' && (
                         <div>
-                            <label className="block text-xs uppercase text-zinc-500 mb-2 font-black tracking-widest">API Key</label>
+                            <label className={labelClass}>API Key</label>
                             <SecureInput
                                 value={settings.ai.apiKey || ''}
                                 onChange={val => updateAi('apiKey', val)}
@@ -191,54 +301,36 @@ export function Settings() {
                 </div>
             </div>
 
-            <div className="h-px bg-white/5 w-full" />
+            <Divider />
 
-            {/* Twitch Config */}
+            {/* Platforms */}
             <div>
-                <h2 className="text-3xl font-black mb-2 flex items-center gap-5 text-white uppercase tracking-tight">
-                    <div className="bg-zinc-800 p-4 rounded-xl">
-                        <TwitchIcon className="text-zinc-400" size={32} />
-                    </div>
-                    Twitch Details
-                </h2>
+                <SectionTitle icon={<Radio className="text-zinc-400" size={32} />}>Platforms</SectionTitle>
+                <p className="mt-2 ml-20 text-sm text-zinc-500">Enable any combination. Changes connect or disconnect immediately after saving.</p>
 
-                <div className="mt-8 ml-20 space-y-6">
-                    <div className="grid grid-cols-2 gap-4">
-                        <div>
-                            <label className="block text-xs uppercase text-zinc-500 mb-2 font-black tracking-widest">Bot Username</label>
-                            <input
-                                className="w-full bg-zinc-800 border-2 border-transparent rounded-xl p-4 text-white font-bold focus:border-zinc-600 outline-none"
-                                value={settings.twitch.username}
-                                onChange={e => updateTwitch('username', e.target.value)}
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-xs uppercase text-zinc-500 mb-2 font-black tracking-widest">Channel</label>
-                            <input
-                                className="w-full bg-zinc-800 border-2 border-transparent rounded-xl p-4 text-white font-bold focus:border-zinc-600 outline-none"
-                                value={settings.twitch.channel}
-                                onChange={e => updateTwitch('channel', e.target.value)}
-                            />
-                        </div>
-                    </div>
-                    <div>
-                        <label className="block text-xs uppercase text-zinc-500 mb-2 font-black tracking-widest">Client ID</label>
-                        <SecureInput
-                            value={settings.twitch.clientId}
-                            onChange={val => updateTwitch('clientId', val)}
-                        />
-                    </div>
-                    <div>
-                        <label className="block text-xs uppercase text-zinc-500 mb-2 font-black tracking-widest">Client Secret</label>
-                        <SecureInput
-                            value={settings.twitch.clientSecret}
-                            onChange={val => updateTwitch('clientSecret', val)}
-                        />
-                    </div>
+                <div className="mt-8 ml-20 space-y-4">
+                    <TwitchCard
+                        mode="settings"
+                        value={settings.platforms.twitch}
+                        status={status.platforms.twitch}
+                        onChange={twitch => setSettings(prev => ({ ...prev, platforms: { ...prev.platforms, twitch } }))}
+                    />
+                    <YouTubeCard
+                        mode="settings"
+                        value={settings.platforms.youtube}
+                        status={status.platforms.youtube}
+                        onChange={youtube => setSettings(prev => ({ ...prev, platforms: { ...prev.platforms, youtube } }))}
+                    />
+                    <TikTokCard
+                        mode="settings"
+                        value={settings.platforms.tiktok}
+                        status={status.platforms.tiktok}
+                        onChange={tiktok => setSettings(prev => ({ ...prev, platforms: { ...prev.platforms, tiktok } }))}
+                    />
                 </div>
             </div>
 
-            <div className="h-px bg-white/5 w-full" />
+            <Divider />
 
             {/* Actions */}
             <div className="flex justify-end gap-4">
@@ -255,7 +347,7 @@ export function Settings() {
             <div className="bg-red-500/5 border border-red-500/10 rounded-2xl p-6 flex items-center justify-between mt-12">
                 <div>
                     <h4 className="text-red-500 font-bold text-lg mb-1">Clear All User Data</h4>
-                    <p className="text-zinc-500 text-sm">Permanently remove all tracked users and chat history.</p>
+                    <p className="text-zinc-500 text-sm">Permanently remove all tracked users, notes and chat history.</p>
                 </div>
                 <button
                     onClick={handleClearAll}
@@ -266,4 +358,17 @@ export function Settings() {
             </div>
         </div>
     );
+}
+
+function SectionTitle({ icon, children }: { icon: React.ReactNode; children: React.ReactNode }) {
+    return (
+        <h2 className="text-3xl font-black mb-2 flex items-center gap-5 text-white uppercase tracking-tight">
+            <div className="bg-zinc-800 p-4 rounded-xl">{icon}</div>
+            {children}
+        </h2>
+    );
+}
+
+function Divider() {
+    return <div className="h-px bg-white/5 w-full" />;
 }

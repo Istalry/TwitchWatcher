@@ -1,10 +1,18 @@
 import axios from 'axios';
 import { settingsStore } from '../store/settings';
 
+export const TWITCH_REDIRECT_URI = 'http://localhost:3000/auth/twitch/callback';
+
+// Twitch asks apps to validate tokens roughly hourly; we cache the check so
+// every Helix call doesn't pay for a round-trip to /oauth2/validate.
+const VALIDATION_TTL_MS = 5 * 60 * 1000;
+
+let lastValidated: { token: string; at: number } | null = null;
+
 export const authService = {
     // Generate the URL for the user to authorize on Twitch
     getAuthUrl: () => {
-        const settings = settingsStore.get().twitch;
+        const settings = settingsStore.get().platforms.twitch;
         const scopes = [
             'chat:read',
             'chat:edit',
@@ -12,12 +20,10 @@ export const authService = {
             'moderator:manage:banned_users',
             'moderator:manage:chat_messages'
         ];
-        // Ensure redirect URI matches what we registered or default
-        const redirectUri = 'http://localhost:3000/auth/twitch/callback';
 
         const params = new URLSearchParams({
             client_id: settings.clientId,
-            redirect_uri: redirectUri,
+            redirect_uri: TWITCH_REDIRECT_URI,
             response_type: 'code',
             scope: scopes.join(' '),
         });
@@ -26,8 +32,7 @@ export const authService = {
 
     // Exchange the authorization code for an access token
     exchangeCodeForToken: async (code: string) => {
-        const settings = settingsStore.get().twitch;
-        const redirectUri = 'http://localhost:3000/auth/twitch/callback';
+        const settings = settingsStore.get().platforms.twitch;
 
         try {
             const response = await axios.post('https://id.twitch.tv/oauth2/token', null, {
@@ -36,25 +41,17 @@ export const authService = {
                     client_secret: settings.clientSecret,
                     code,
                     grant_type: 'authorization_code',
-                    redirect_uri: redirectUri,
+                    redirect_uri: TWITCH_REDIRECT_URI,
                 },
             });
 
-            const { access_token, refresh_token, expires_in, scope } = response.data;
+            const { access_token, refresh_token } = response.data;
 
-            // Save to Secure Settings
-            settingsStore.updateTwitch({
+            settingsStore.updatePlatform('twitch', {
                 accessToken: access_token,
                 refreshToken: refresh_token,
-                // We don't store expiresAt explicitly in settings currently, maybe we should've added it?
-                // For now, we'll rely on try/catch refresh flow or 401s if we don't track expiry.
-                // Or I can add expiresAt to settings.ts interface. 
-                // Let's assume we refresh on 401 or simply try refreshing if it fails.
-                // But the previous logic had proactive refresh.
-                // Let's stick to simple structure for now or maybe just force refresh if we suspect issues.
-                // Actually, let's keep it simple. If 401, logic elsewhere should retry.
-                // To keep this refactor safe, I will auto-refresh on startup or get access.
             });
+            lastValidated = { token: access_token, at: Date.now() };
 
             return access_token;
         } catch (error) {
@@ -65,7 +62,7 @@ export const authService = {
 
     // Refresh the access token using the refresh token
     refreshAccessToken: async () => {
-        const settings = settingsStore.get().twitch;
+        const settings = settingsStore.get().platforms.twitch;
         if (!settings.refreshToken) {
             throw new Error('No refresh token available');
         }
@@ -82,10 +79,11 @@ export const authService = {
 
             const { access_token, refresh_token } = response.data;
 
-            settingsStore.updateTwitch({
+            settingsStore.updatePlatform('twitch', {
                 accessToken: access_token,
                 refreshToken: refresh_token || settings.refreshToken,
             });
+            lastValidated = { token: access_token, at: Date.now() };
 
             return access_token;
         } catch (error) {
@@ -94,21 +92,27 @@ export const authService = {
         }
     },
 
-    // Get a valid access token (refreshes if needed validation check fails? No, simplistic for now)
-    getToken: async () => {
-        const settings = settingsStore.get().twitch;
+    /** Forget the cached validation, e.g. after a 401 from Helix. */
+    invalidate: () => {
+        lastValidated = null;
+    },
+
+    // Get a valid access token, validating (cached) and refreshing if needed.
+    getToken: async (): Promise<string | null> => {
+        const settings = settingsStore.get().platforms.twitch;
         if (!settings.accessToken) {
             return null;
         }
 
-        // Validate? Or just return. 
-        // Real-world: Should check validation endpoint.
-        // For this project: Return token. If it fails, the consumer should trigger refresh?
-        // Or we can just validate it via Twitch API validation endpoint.
+        if (lastValidated && lastValidated.token === settings.accessToken && Date.now() - lastValidated.at < VALIDATION_TTL_MS) {
+            return settings.accessToken;
+        }
+
         try {
             await axios.get('https://id.twitch.tv/oauth2/validate', {
                 headers: { 'Authorization': `OAuth ${settings.accessToken}` }
             });
+            lastValidated = { token: settings.accessToken, at: Date.now() };
             return settings.accessToken;
         } catch (e) {
             // Token likely invalid/expired
@@ -123,7 +127,7 @@ export const authService = {
     },
 
     hasToken: () => {
-        const settings = settingsStore.get().twitch;
+        const settings = settingsStore.get().platforms.twitch;
         return !!settings.accessToken;
     }
 };

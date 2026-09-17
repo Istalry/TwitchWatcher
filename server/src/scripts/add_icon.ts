@@ -1,7 +1,5 @@
-import * as ResEdit from 'resedit';
 import * as fs from 'fs';
 import * as path from 'path';
-import pngToIco from 'png-to-ico';
 
 const EXE_PATH = path.resolve(__dirname, '../../dist/twitch-automod-server.exe');
 const PNG_PATH = path.resolve(__dirname, '../../../client/public/logo.png');
@@ -15,6 +13,9 @@ console.log('PNG_PATH:', PNG_PATH);
 console.log('ICO_PATH:', ICO_PATH);
 
 async function main() {
+    // Both packages are ESM-only; load them at runtime.
+    const ResEdit = await import('resedit');
+    const { default: pngToIco } = await import('png-to-ico');
     console.log('--- Icon Injection Start ---');
 
     // 1. Convert PNG to ICO

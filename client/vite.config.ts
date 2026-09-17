@@ -7,11 +7,9 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
-      '/api': {
-        target: 'http://localhost:3000', // Our backend
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, '') // remove /api
-      }
+      // Backend routes live under /api and /auth on the Express server.
+      '/api': { target: 'http://localhost:3000', changeOrigin: true },
+      '/auth': { target: 'http://localhost:3000', changeOrigin: true },
     }
   },
   test: {

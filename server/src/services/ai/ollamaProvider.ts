@@ -1,7 +1,7 @@
 import { Ollama } from 'ollama';
 import { settingsStore } from '../../store/settings';
-import { ModerationResult } from '../../store/types';
-import { AIProvider } from './aiProvider';
+import { ModerationResult, Platform } from '../../store/types';
+import { AIProvider, parseVerdict } from './aiProvider';
 import { buildModerationPrompt } from './promptBuilder';
 
 export class OllamaProvider implements AIProvider {
@@ -11,33 +11,20 @@ export class OllamaProvider implements AIProvider {
         this.ollama = new Ollama();
     }
 
-    public async analyzeMessage(message: string, history: string[] = []): Promise<ModerationResult> {
+    public async analyzeMessage(message: string, history: string[] = [], platform?: Platform): Promise<ModerationResult> {
         const settings = settingsStore.get();
-        try {
-            const prompt = buildModerationPrompt(message, history);
-            console.log('--- Sending to Ollama ---');
-            console.log(prompt);
+        const prompt = buildModerationPrompt(message, history, platform);
+        if (process.env.DEBUG_AI) console.log('--- Sending to Ollama ---\n' + prompt);
 
-            const response = await this.ollama.chat({
-                model: settings.ai.model,
-                messages: [{ role: 'user', content: prompt }],
-                format: 'json',
-            });
+        const response = await this.ollama.chat({
+            model: settings.ai.model,
+            messages: [{ role: 'user', content: prompt }],
+            format: 'json',
+        });
 
-            console.log('--- Ollama Response ---');
-            console.log(response.message.content);
+        if (process.env.DEBUG_AI) console.log('--- Ollama Response ---\n' + response.message.content);
 
-            const result = JSON.parse(response.message.content);
-            console.log('--- Parsed Result ---', result);
-
-            return {
-                flagged: result.flagged,
-                reason: result.reason,
-                suggestedAction: result.suggestedAction,
-            };
-        } catch (err) {
-            return { flagged: false, reason: 'Analysis Failed', suggestedAction: 'none' };
-        }
+        return parseVerdict(response.message.content);
     }
 
     public async healthCheck(): Promise<boolean> {
