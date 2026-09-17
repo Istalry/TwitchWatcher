@@ -38,6 +38,13 @@ Done items are kept as a record of what exists; unchecked items are the roadmap.
 - [ ] **Smoke test in CI**: launch the built exe with `NO_BROWSER=1`, poll `GET /api/setup/status` for a `200`, then `POST /api/shutdown`
 - [ ] **Docs**: README "Easy Install" points to the latest release; `CLAUDE.md` gains a "Releasing" paragraph (bump → tag → push tag → CI publishes)
 
+## Link blocking
+- [ ] **Setting** `moderation.links: 'allow' | 'flag' | 'block'` (default `allow`) + `linkAllowlist: string[]` (domains, e.g. `youtube.com`, `clips.twitch.tv`) in Settings → Moderation; trusted roles (`skipTrustedRoles`) are exempt
+- [ ] **Deterministic pass (regex, before the AI)**: detect real URLs (`https?://`, `www.`, `domain.tld/…`, IPv4:port) and normalize (lowercase, strip tracking params); if the domain is not allowlisted → queue a card directly (`category: 'spam'`, severity 3, reason "Link: <domain>") without an AI call; `block` mode pre-selects `timeout` as the suggested action. Only the matching messages are attached to the card
+- [ ] **Obfuscated links go to the AI**: strings that look like a link deliberately broken to evade filters — `bit(dot)ly/x`, `discord . gg / abc`, `y o u t u b e . c o m`, `example[.]com`, `hxxp://`, missing scheme with a spaced TLD — are not caught by the regex; add a prompt clause under `spam`: "a link that has been deliberately broken up or disguised to evade filters (dots replaced by '(dot)', spaces inserted, brackets around the '.') is spam, severity 3, even if the destination looks harmless" with two positive examples and one negative ("this is v1 . 2 of the app" is a version number, not a link)
+- [ ] **UI**: Settings → Moderation section with the mode selector and an editable allowlist; the card shows the detected domain as a chip
+- [ ] **Tests**: server unit tests for the URL detector (positives, obfuscated negatives, allowlist, `v1.2` / `1.5x` / `e.g.` false positives); client test for the settings section
+
 ## Known limitations / ideas
 - [ ] YouTube `unban` only works for bans issued in the current session (needs the ban id) — persist `banIds` or look them up via `liveChatBans`
 - [ ] Server has no automated tests (stores/services have import side effects) — add a test entry point that avoids the `analysisQueue` interval and file I/O
