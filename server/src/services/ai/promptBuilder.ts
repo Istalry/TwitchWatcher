@@ -1,4 +1,4 @@
-import { settingsStore } from '../../store/settings';
+import { LinkPolicy, Sensitivity, settingsStore } from '../../store/settings';
 import { MODERATION_CATEGORIES, ModerationCategory, Platform } from '../../store/types';
 
 const CATEGORY_DESCRIPTIONS: Record<ModerationCategory, string> = {
@@ -16,10 +16,20 @@ const SENSITIVITY_PREAMBLE: Record<'lenient' | 'balanced' | 'strict', string> = 
     strict: 'Flag anything a cautious moderator would want to review, including borderline cases — but still never flag harmless chatter.',
 };
 
-export const buildModerationPrompt = (message: string, history: string[] = [], platform?: Platform): string => {
+/** Parts of the settings the prompt depends on; anything omitted falls back to the saved settings. */
+export interface PromptOptions {
+    language?: string;
+    sensitivity?: Sensitivity;
+    categories?: Partial<Record<ModerationCategory, boolean>>;
+    links?: LinkPolicy;
+}
+
+export const buildModerationPrompt = (message: string, history: string[] = [], platform?: Platform, options: PromptOptions = {}): string => {
     const settings = settingsStore.get();
-    const language = settings.aiLanguage;
-    const { sensitivity, categories, links } = settings.moderation;
+    const language = options.language ?? settings.aiLanguage;
+    const sensitivity = options.sensitivity ?? settings.moderation.sensitivity;
+    const categories = options.categories ?? settings.moderation.categories;
+    const links = options.links ?? settings.moderation.links;
     const moderateLinks = links !== 'allow' && categories.spam !== false; // plain URLs never reach the AI; disguised ones do
 
     const enabledCategories = MODERATION_CATEGORIES.filter(c => categories[c] !== false);
@@ -41,16 +51,17 @@ New message from this user: "${message}"
 
 These ARE violations and must be flagged:
 - insults aimed at a person ("shut up you worthless idiot", "nobody wants you here", "kys") → harassment, severity 3-4
-- scam or phishing bait ("free v-bucks at bit.ly/…", "click here to claim") → spam, severity 3
+- scam or phishing bait ("free v-bucks at bit.ly/…", "click here to claim"), selling followers/viewers ("cheap followers, dm me") → spam, severity 3
 - slurs, dehumanizing statements about a group → hate, severity 4-5
 - threats of violence, sharing someone's address/phone → threat, severity 5
 ${moderateLinks ? '- a link deliberately broken up or disguised to evade filters ("bit(dot)ly/x", "discord . gg / abc", "y o u t u b e . c o m", "example[.]com", "hxxp://") → spam, severity 3, even if the destination looks harmless\n' : ''}
 These are NOT violations and must be answered with "flagged": false:
 - greetings, small talk, questions (including personal ones like "where are you from" or "do you have a wife"), jokes, opinions, disagreement
+- swearing that is not aimed at anyone ("putain le clutch", "holy shit that play")
 - talking about other viewers, saying someone blocked them, complaining, drama between viewers without insults
 - emojis, single letters, dots, repeated characters, song requests, non-English chatter you cannot read
-- the words "hate"/"kill"/"die" used casually (e.g. "I hate Mondays", "this beat kills")
-${moderateLinks ? '- version numbers, prices or abbreviations that merely contain dots ("v1 . 2", "1.5x", "e.g.")\n' : ''}Only treat a series of fragments as abuse if the fragments, joined together, clearly spell a slur or explicit insult.
+- the words "hate"/"kill"/"die" used casually, in any language (e.g. "I hate Mondays", "this beat kills", "ce son il tue", "je suis mort de rire")
+${moderateLinks ? '- version numbers, prices or abbreviations that merely contain dots ("v1 . 2", "la maj 1 . 3", "1.5x", "e.g.")\n' : ''}Only treat a series of fragments as abuse if the fragments, joined together, clearly spell a slur or explicit insult.
 Never flag a message only because the user posts a lot or repeats themselves; repetition never raises the severity of a harmless message.
 The word "hate" by itself is not hate speech ("Hate from Ireland" is a pun on "hi from"): "hate" requires an actual slur or dehumanizing statement about a group.
 

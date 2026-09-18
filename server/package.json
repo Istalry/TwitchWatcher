@@ -10,7 +10,8 @@
         "build": "tsc --noEmit && node bundle.mjs",
         "package": "pkg dist/server.cjs --config package.json --output dist/TwitchWatcher.exe",
         "test": "vitest run",
-        "icon": "ts-node src/scripts/add_icon.ts"
+        "icon": "ts-node src/scripts/add_icon.ts",
+        "bench:ai": "ts-node src/scripts/bench_ai.ts"
     },
     "keywords": [],
     "author": "",

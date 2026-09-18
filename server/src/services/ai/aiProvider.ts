@@ -1,4 +1,15 @@
 import { ModerationResult, Platform } from '../../store/types';
+import type { PromptOptions } from './promptBuilder';
+
+/**
+ * Optional constructor overrides so a provider can be pointed at another model / key / prompt
+ * without touching the saved settings (used by the bench script). Anything omitted comes from settings.
+ */
+export interface ProviderOverrides {
+    model?: string;
+    apiKey?: string;
+    prompt?: PromptOptions;
+}
 
 export interface AIProvider {
     /** Must throw on any failure; AIService decides how to fail open. */

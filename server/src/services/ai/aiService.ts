@@ -48,7 +48,7 @@ export class AIService {
         try {
             const raw = await provider.analyzeMessage(message, history, platform);
             this._lastError = null;
-            return normalize(raw);
+            return normalizeVerdict(raw);
         } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
             this._lastError = { message: msg, at: Date.now() };
@@ -63,7 +63,8 @@ export class AIService {
     }
 }
 
-function normalize(raw: ModerationResult): Verdict {
+/** Clamps a raw provider verdict into a valid category and a 1-5 severity. */
+export function normalizeVerdict(raw: ModerationResult): Verdict {
     const category = MODERATION_CATEGORIES.includes(raw.category as ModerationCategory)
         ? (raw.category as ModerationCategory)
         : 'other';

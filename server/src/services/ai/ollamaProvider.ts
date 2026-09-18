@@ -1,23 +1,23 @@
 import { Ollama } from 'ollama';
 import { settingsStore } from '../../store/settings';
 import { ModerationResult, Platform } from '../../store/types';
-import { AIProvider, parseVerdict } from './aiProvider';
+import { AIProvider, ProviderOverrides, parseVerdict } from './aiProvider';
 import { buildModerationPrompt } from './promptBuilder';
 
 export class OllamaProvider implements AIProvider {
     private ollama: Ollama;
 
-    constructor() {
+    constructor(private overrides: ProviderOverrides = {}) {
         this.ollama = new Ollama();
     }
 
     public async analyzeMessage(message: string, history: string[] = [], platform?: Platform): Promise<ModerationResult> {
-        const settings = settingsStore.get();
-        const prompt = buildModerationPrompt(message, history, platform);
+        const model = this.overrides.model ?? settingsStore.get().ai.model;
+        const prompt = buildModerationPrompt(message, history, platform, this.overrides.prompt);
         if (process.env.DEBUG_AI) console.log('--- Sending to Ollama ---\n' + prompt);
 
         const response = await this.ollama.chat({
-            model: settings.ai.model,
+            model,
             messages: [{ role: 'user', content: prompt }],
             format: 'json',
         });

@@ -39,3 +39,4 @@ client/dist
 
 [bB]uild/
 TwitchWatcher-PersonnalBuild/
+server/bench/results/
