@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_SETTINGS, SETTINGS_SCHEMA_VERSION, migrate, withDefaults } from '../store/settings';
+import { DEFAULT_REPEAT_RULE, DEFAULT_SETTINGS, SETTINGS_SCHEMA_VERSION, migrate, withDefaults } from '../store/settings';
 
 describe('migrate', () => {
     it('moves the v1 twitch block under platforms and stamps the schema version', () => {
@@ -53,7 +53,9 @@ describe('withDefaults', () => {
         });
 
         expect(merged.moderation.sensitivity).toBe('strict');
-        expect(merged.moderation.links).toBe('allow');
+        expect(merged.moderation.links).toBe('suppress');
+        expect(merged.moderation.rules).toEqual([DEFAULT_REPEAT_RULE]); // a v3 file has no rules key
+        expect(withDefaults(DEFAULT_SETTINGS, { moderation: { rules: [] } }).moderation.rules).toEqual([]);
         expect(merged.moderation.linkAllowlist).toEqual(['twitch.tv']);
         expect(merged.moderation.categories.hate).toBe(true);
         expect(merged.platforms.twitch.channel).toBe('');

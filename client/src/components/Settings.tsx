@@ -54,7 +54,7 @@ export function Settings({ status = EMPTY_STATUS, info = null, onSaved }: Props)
             sensitivity: 'balanced',
             categories: { hate: true, harassment: true, threat: true, spam: true, vulgarity: true, other: true },
             skipTrustedRoles: true,
-            links: 'allow',
+            links: 'suppress',
             linkAllowlist: [],
             linksAuto: false,
             rules: [],

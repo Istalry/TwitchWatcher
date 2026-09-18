@@ -20,7 +20,12 @@ All notable changes to this project are documented here. The format follows
 - Server tests for the moderation pipeline (routing, flood breaker, analysis queue, rules, auto executor, sanction log, retention, backup).
 
 ### Changed
+- New installs default to the *Suppress* link policy and ship with an enabled *Repeated message* rule (3× within 60 s → delete + timeout, confirmed by the streamer). Existing settings are not changed.
 - The moderation prompt lists French casual uses of "tue"/"mort", untargeted swearing and "selling followers" among its examples.
+- README screenshots redone for the Moderation tab, Live Users, the setup wizard, plus new ones for the Log tab and the rules editor.
+
+### Fixed
+- On desktop the tab content started under the top bar (the panel headers were hidden behind it).
 - `POST /api/actions/:id/resolve` and the manual moderation route share one sanction path, so message deletion, user status and the journal stay consistent.
 
 ## [2.0.0] - 2026-09-18

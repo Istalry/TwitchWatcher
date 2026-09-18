@@ -13,16 +13,19 @@
 **TwitchWatcher** is a local, AI-powered auto-moderation dashboard for live streamers on **Twitch, YouTube and TikTok**. It serves as an intelligent "second pair of eyes," watching all your chats in one merged feed and detecting toxicity, hate speech, threats and spam in real time.
 
 ![Main Dashboard](resources/mainPage.png)
+*The Moderation tab: merged chat from three platforms on the left; on the right a card from a rule (repeated message), a link card counting down in auto mode with its **Hold** button, and an AI card below.*
 
-Unlike traditional bots that ban instantly, TwitchWatcher **queues suspicious messages** for human review. This "Human-in-the-Loop" approach prevents AI hallucinations from causing unfair bans while keeping your community safe.
+Unlike traditional bots that ban instantly, TwitchWatcher **queues suspicious messages** for human review. This "Human-in-the-Loop" approach prevents AI hallucinations from causing unfair bans while keeping your community safe. Only the rules **you** write (and the link policy) can be allowed to act on their own, after a countdown you can stop — and everything they do is logged and undoable.
 
 ## Key Features
 *   **Multi-platform**: Twitch, YouTube and TikTok chats merged into one live feed, each message tagged with its platform. Enable any combination.
 *   **AI Moderation**: Supports **Ollama** (Local, Free) and **Google Gemini** (Cloud, Fast).
 *   **Split-view Moderation tab**: live chat on the left, the AI's pending actions on the right. Flagged messages are highlighted inline; hover any message for a quick timeout/ban.
 *   **Tunable, not trigger-happy**: sensitivity levels, category toggles, per-user *notes* for borderline messages, and a flood breaker that reacts when the AI starts flagging everything.
-*   **Your own rules, before the AI**: banned words, regular expressions, caps lock and repeated messages become cards instantly — and can optionally be executed automatically after a countdown you can stop.
-*   **Every sanction is logged** in the Log tab, with an **Undo** button.
+*   **Your own rules, before the AI**: banned words, regular expressions, caps lock and repeated messages become cards instantly, without waiting for the model. A *Repeated message* rule ships enabled as an example.
+*   **Link policy**: links outside your allowlist are caught instantly; by default approving the card deletes the message and times out the user.
+*   **Opt-in auto mode**: a rule or the link policy can execute its sanction after a countdown you can **Hold** or **Dismiss**. AI verdicts never run on their own.
+*   **Every sanction is logged** in the Log tab — who, why, by the streamer or by a rule — with an **Undo** button.
 *   **Backups**: export all your settings (keys included) to a password-protected file and restore them on another PC.
 *   **Network Access**: Control the dashboard from your phone or tablet via local network (QR Code included).
 *   **Privacy First**: All chat logs and user data are stored locally on your machine.
@@ -118,6 +121,7 @@ We take security seriously. Here is how your data is handled:
 
 ### Log
 Every timeout, ban, unban and message deletion — whether you clicked it, a rule executed it automatically, or the AI suggested it — with the reason and the offending messages. **Undo** lifts a ban or timeout (on Twitch/YouTube; for YouTube only bans made from the app can be lifted).
+![Sanction Log](resources/sanctionLog.png)
 
 ### Live Users
 Everyone who has chatted, across platforms. Click a user to see their history and any **AI notes** — borderline flags that stayed below your sensitivity threshold.
@@ -126,8 +130,9 @@ Everyone who has chatted, across platforms. Click a user to see their history an
 ### Settings → Moderation
 *   **Sensitivity**: *Lenient* / *Balanced* / *Strict* sets the severity a flag needs to become a card. Anything below becomes a note on the user instead. Explicit slurs and threats always reach the queue.
 *   **Categories**: opt out of e.g. vulgarity or spam. Hate speech and threats are always on.
-*   **Links**: *Allow* (default), *Suppress* (delete the message + time out the user) or *Ban* (delete the message + ban the user). Any link outside your allowlist (`youtube.com`, `clips.twitch.tv`, …) becomes a card instantly, without the AI — **nothing is deleted or sanctioned until you approve the card**. Disguised links like `bit(dot)ly` are left to the AI, which is told to treat them as spam.
-*   **Rules**: your own deterministic filters, checked before the AI: banned *words / phrases* (whole words, accents ignored), a *regular expression*, *caps lock* (long, mostly upper-case messages) or a *repeated message*. Each rule has a category, a sanction (timeout or ban) and whether the message is deleted. A rule hit becomes a card immediately, without any AI call.
+*   **Links**: *Suppress* (default: delete the message + time out the user), *Ban* (delete the message + ban the user) or *Allow*. Any link outside your allowlist (`youtube.com`, `clips.twitch.tv`, …) becomes a card instantly, without the AI — **nothing is deleted or sanctioned until you approve the card** (unless you enable auto mode for links). Disguised links like `bit(dot)ly` are left to the AI, which is told to treat them as spam.
+*   **Rules**: your own deterministic filters, checked before the AI: banned *words / phrases* (whole words, accents ignored), a *regular expression*, *caps lock* (long, mostly upper-case messages) or a *repeated message*. Each rule has a category, a sanction (timeout or ban) and whether the message is deleted. A rule hit becomes a card immediately, without any AI call. A *Repeated message* rule (same message 3× within a minute → delete + timeout) is there by default; edit or delete it as you like.
+![Rules](resources/rules.png)
 *   **Auto mode** (off by default): a rule — or the link policy — can execute its sanction by itself after a grace period (10 s by default). The card shows a countdown; **Hold** keeps it for you to decide, **Dismiss** cancels it. AI verdicts are never executed automatically.
 
 > [!WARNING]

@@ -229,7 +229,7 @@ function App() {
       <div className="flex-1 flex flex-col md:ml-64 relative">
         <Topbar onShutdown={handleShutdown} status={systemStatus} update={update} onDismissUpdate={dismissUpdate} />
 
-        <main className={`flex-1 p-4 md:p-8 pb-24 md:pb-8 overflow-y-auto custom-scrollbar relative z-0 ${mainPadding}`}>
+        <main className={`flex-1 px-4 md:px-8 pb-24 md:pb-8 overflow-y-auto custom-scrollbar relative z-0 ${mainPadding}`}>
           <AnimatePresence mode="wait">
             {activeTab === 'moderation' && (
               <motion.div

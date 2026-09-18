@@ -86,6 +86,20 @@ export interface AppSettings {
     };
 }
 
+/** Shipped enabled so streamers see what a rule looks like; the card still needs their approval (auto is off). */
+export const DEFAULT_REPEAT_RULE: Rule = {
+    id: 'default-repeat',
+    name: 'Repeated message',
+    enabled: true,
+    type: 'repeat',
+    count: 3,
+    windowSeconds: 60,
+    category: 'spam',
+    action: 'timeout',
+    deleteMessage: true,
+    auto: false,
+};
+
 export const DEFAULT_SETTINGS: AppSettings = {
     schemaVersion: SETTINGS_SCHEMA_VERSION,
     isSetupComplete: false,
@@ -97,10 +111,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
         sensitivity: 'balanced',
         categories: { hate: true, harassment: true, threat: true, spam: true, vulgarity: true, other: true },
         skipTrustedRoles: true,
-        links: 'allow',
+        links: 'suppress',
         linkAllowlist: [],
         linksAuto: false,
-        rules: [],
+        rules: [DEFAULT_REPEAT_RULE],
         autoEnabled: false,
         autoGraceSeconds: 10,
     },

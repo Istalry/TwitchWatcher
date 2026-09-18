@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { exportSettings, importSettings } from '../services/backup';
-import { DEFAULT_SETTINGS, SETTINGS_SCHEMA_VERSION, withDefaults, type AppSettings } from '../store/settings';
+import { DEFAULT_REPEAT_RULE, DEFAULT_SETTINGS, SETTINGS_SCHEMA_VERSION, withDefaults, type AppSettings } from '../store/settings';
 
 const settings: AppSettings = withDefaults(DEFAULT_SETTINGS, {
     isSetupComplete: true,
@@ -43,6 +43,6 @@ describe('backup', () => {
         const restored = importSettings(exportSettings(old, 'correct horse'), 'correct horse');
         expect(restored.schemaVersion).toBe(SETTINGS_SCHEMA_VERSION);
         expect(restored.platforms.twitch).toMatchObject({ enabled: true, username: 'bot' });
-        expect(restored.moderation.rules).toEqual([]);
+        expect(restored.moderation.rules).toEqual([DEFAULT_REPEAT_RULE]);
     });
 });
