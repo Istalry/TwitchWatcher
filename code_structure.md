@@ -17,20 +17,30 @@ src/
 │   ├── youtube.ts       # InnerTube chat (youtubei.js) + Data API bans
 │   └── tiktok.ts        # tiktok-live-connector, read-only
 ├── services/
-│   ├── chatHub.ts       # Single entry point for messages → history, analysis, SSE fan-out
-│   ├── analysisQueue.ts # Link policy, batching, rate limit, routing of AI verdicts (queue vs. note)
-│   ├── linkDetector.ts  # Pure URL detection + allowlist (no AI)
-│   ├── updateCheck.ts   # GitHub Releases check (daily)
-│   ├── authService.ts   # Twitch OAuth
-│   ├── googleAuth.ts    # Google OAuth (YouTube Data API)
-│   └── ai/              # AIService (fail-open + lastError), providers, promptBuilder
+│   ├── chatHub.ts            # Single entry point for messages → history, analysis, SSE fan-out
+│   ├── analysisEngine.ts     # AnalysisQueue class: link policy → rules → AI batching, rate limit, routing (injected deps)
+│   ├── analysisQueue.ts      # The AnalysisQueue singleton wired to the real stores
+│   ├── moderationPipeline.ts # Pure routing: routeVerdict(), FloodBreaker, buildAction()
+│   ├── linkDetector.ts       # Pure URL detection + allowlist (no AI)
+│   ├── ruleEngine.ts         # Deterministic rules (words / regex / caps / repeat) + validation
+│   ├── sanctions.ts          # executeSanction() / revertSanction(): platform call + deletion + status + journal
+│   ├── autoExecutor.ts       # Timers for cards with autoExecuteAt (auto mode); autoExecutorInstance.ts wires it
+│   ├── backup.ts             # Password-encrypted settings export / import (.twbackup)
+│   ├── updateCheck.ts        # GitHub Releases check (daily)
+│   ├── authService.ts        # Twitch OAuth
+│   ├── googleAuth.ts         # Google OAuth (YouTube Data API)
+│   └── ai/                   # AIService (fail-open + lastError), providers (with overrides), promptBuilder
 ├── store/          # In-memory state, some persisted to JSON
-│   ├── actionQueue.ts   # Pending moderation actions (EventEmitter)
-│   ├── history.ts       # Chat users, messages and AI notes (users.json)
+│   ├── actionQueue.ts   # Pending moderation actions (EventEmitter), hold()
+│   ├── history.ts       # Chat users, messages and AI notes (users.json) + retention prune
 │   ├── banRegistry.ts   # Platform ban ids so bans can be lifted after a restart (bans.json)
+│   ├── sanctionLog.ts   # Journal of timeouts / bans / unbans / deletions (sanctions.json, last 1000)
 │   ├── settings.ts      # Encrypted app configuration + schema migrations (settings.json)
 │   └── types.ts         # Shared domain types
-├── test/           # vitest unit tests for the pure modules above
+├── scripts/
+│   ├── bench_ai.ts      # npm run bench:ai — prompt bench over ../bench/dataset.json
+│   └── add_icon.ts      # npm run icon — exe icon
+├── test/           # vitest: pure modules + AnalysisQueue / AutoExecutor with fakes
 ├── paths.ts        # DATA_DIR (%APPDATA%\TwitchWatcher, exe dir with portable.txt, or server root) + legacy file migration
 ├── version.ts      # APP_VERSION from package.json, compareVersions()
 └── server.ts       # Express application & API routes (incl. SSE stream)
@@ -42,7 +52,10 @@ src/
 ├── components/
 │   ├── ModerationView.tsx  # Split view: LiveChat | action queue
 │   ├── LiveChat.tsx        # Merged multi-platform feed with inline flags & quick actions
-│   ├── ActionCard.tsx      # The moderation card
+│   ├── ActionCard.tsx      # The moderation card (countdown + Hold in auto mode)
+│   ├── SanctionLog.tsx     # Log tab: journal with Undo
+│   ├── RulesEditor.tsx     # Settings → Moderation → Rules
+│   ├── BackupPanel.tsx     # Settings → General → Backup (export / import)
 │   ├── PlatformBadge.tsx   # TW / YT / TT badge
 │   ├── platforms/          # Twitch/YouTube/TikTok config cards (wizard + settings)
 │   ├── Sidebar.tsx         # Desktop nav + MobileNav bottom bar

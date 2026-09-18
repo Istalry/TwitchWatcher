@@ -34,13 +34,15 @@ npx vitest run src/test/LiveChat.test.tsx   # single test file
 npm run dev                    # ts-node src/server.ts → http://localhost:3000 (auto-opens a browser)
 npm run dev -- --no-browser    # same without opening a browser (also: NO_BROWSER=1); start_app.bat uses this
 npm run typecheck              # tsc --noEmit
-npm test                       # vitest run — pure-module tests in src/test/ (link detector, settings migration, data-dir migration, version compare)
+npm test                       # vitest run — tests in src/test/ (pure modules + the pipeline through dependency injection)
+npx vitest run src/test/ruleEngine.test.ts   # single test file
+npm run bench:ai -- --lang fr  # AI prompt bench against bench/dataset.json (see "AI bench")
 npm run build                  # typecheck + esbuild bundle → dist/server.cjs (single CJS file)
 npm run package                # pkg dist/server.cjs → dist/TwitchWatcher.exe (needs server/public, see build_exe.bat)
 npm run icon                   # replace the exe icon with client/public/logo.png (after package)
 npm start                      # node dist/server.cjs
 ```
-`DEBUG_AI=1` prints every prompt and raw model response. `NO_UPDATE_CHECK=1` skips the GitHub release check. Server tests must not import the singletons (`settingsStore` is the one exception, and only because `settings.ts` also exports the pure `migrate`/`withDefaults`); `src/scripts/test_encryption.ts` is a manual script.
+`DEBUG_AI=1` prints every prompt and raw model response. `NO_UPDATE_CHECK=1` skips the GitHub release check. Server tests must not import the singleton *instances*: the classes (`AnalysisQueue`, `AutoExecutor`, `SanctionLog`, `ActionQueue`, `FloodBreaker`) take their dependencies in the constructor and the `*Instance.ts` / singleton modules wire them up (`settingsStore` is the one exception, and only because `settings.ts` also exports the pure `migrate`/`withDefaults`). `src/scripts/test_encryption.ts` is a manual script.
 
 ### Root batch scripts (Windows)
 - `setup.bat` — pulls `gemma3:4b` via Ollama (non-fatal), `npm install` in server and client. All credentials are entered in the in-app wizard.
@@ -55,15 +57,15 @@ npm start                      # node dist/server.cjs
 ## Server architecture
 
 ### Module-level singletons with import side effects
-Every store and service exports a ready-made instance (`settingsStore`, `historyStore`, `actionQueue`, `chatHub`, `analysisQueue`, `aiService`, `authService`, `googleAuth`, `platformRegistry`). Importing has side effects: `settingsStore` reads and decrypts `settings.json`, `historyStore` reads `users.json` and registers `SIGINT`/`beforeExit` flush hooks, and `analysisQueue` starts a 500 ms `setInterval` in its constructor. Keep this in mind if you add server tests.
+Every store and service exports a ready-made instance (`settingsStore`, `historyStore`, `banRegistry`, `sanctionLog`, `actionQueue`, `chatHub`, `analysisQueue`, `autoExecutor`, `aiService`, `authService`, `googleAuth`, `platformRegistry`). Importing has side effects: `settingsStore` reads and decrypts `settings.json`, `historyStore` reads `users.json` and registers `SIGINT`/`beforeExit` flush hooks, `analysisQueue` starts a 500 ms `setInterval`, `autoExecutor` subscribes to `actionQueue`. The logic lives in classes with injected dependencies (`services/analysisEngine.ts`, `services/autoExecutor.ts`, `store/sanctionLog.ts`, …); `services/analysisQueue.ts` / `autoExecutorInstance.ts` only build the singletons. Tests import the classes, never the instances.
 
 ### Data files
-`settings.json`, `users.json` and `bans.json` live in `DATA_DIR` (`src/paths.ts`): under `pkg` that is `%APPDATA%\TwitchWatcher` (or the exe folder when a `portable.txt` sits next to the exe), otherwise the server package root (found by walking up to `package.json`, so it works for ts-node, `tsc` output and the esbuild bundle). All are gitignored. `users.json`/`bans.json` writes are debounced (1 s) and flushed on shutdown.
+`settings.json`, `users.json`, `bans.json` and `sanctions.json` live in `DATA_DIR` (`src/paths.ts`): under `pkg` that is `%APPDATA%\TwitchWatcher` (or the exe folder when a `portable.txt` sits next to the exe), otherwise the server package root (found by walking up to `package.json`, so it works for ts-node, `tsc` output and the esbuild bundle). All are gitignored. `users.json`/`bans.json`/`sanctions.json` writes are debounced (1 s) and flushed on shutdown. `users.json` is pruned at startup and daily (`retentionDays`, default 90, 0 = never; banned users are kept — `staleUserKeys()` in `store/history.ts`).
 
 **Updates must never lose user data.** `paths.ts` moves any data file found next to the exe into `DATA_DIR` on first launch (`migrateLegacyDataFiles`, never overwriting). `settingsStore.load()` never clobbers a file it cannot read: it is renamed `settings.json.unreadable-<stamp>` and defaults are used; a schema migration (`schemaVersion`, `migrate()`) writes `settings.json.bak` first. When you change the settings shape, bump `SETTINGS_SCHEMA_VERSION`, add a step to `migrate()` and a case to `src/test/settingsMigrate.test.ts`.
 
 ### Settings are the single source of truth
-`src/store/settings.ts` owns all config: `platforms.{twitch,youtube,tiktok}` (each with `enabled` + credentials/tokens), `moderation` (sensitivity, category toggles, skipTrustedRoles, `links` policy + `linkAllowlist`), `ai`, `aiLanguage`, `defaultTimeoutDuration`, `checkForUpdates`, `isSetupComplete`, `schemaVersion`. Persisted AES-256-GCM with a key derived from `hostname + OS username`; decrypt failure resets to defaults. `load()` migrates the pre-2.0 Twitch-only layout (`{ twitch: {...} }` → `platforms.twitch`) and fills missing keys from defaults. Setup can complete with **zero** platforms enabled; platforms are added later in Settings, and `PUT /api/settings` reconnects any platform whose config changed.
+`src/store/settings.ts` owns all config: `platforms.{twitch,youtube,tiktok}` (each with `enabled` + credentials/tokens), `moderation` (sensitivity, category toggles, skipTrustedRoles, `links` policy + `linkAllowlist` + `linksAuto`, `rules: Rule[]`, `autoEnabled`, `autoGraceSeconds`), `ai`, `aiLanguage`, `defaultTimeoutDuration`, `retentionDays`, `checkForUpdates`, `isSetupComplete`, `schemaVersion`. `services/backup.ts` exports/imports the whole object (tokens included) as a password-encrypted `.twbackup` (pbkdf2 + AES-256-GCM) that, unlike `settings.json`, is not bound to the machine; import goes through `migrate()` + `withDefaults()` then `settingsStore.replace()`. Persisted AES-256-GCM with a key derived from `hostname + OS username`; decrypt failure resets to defaults. `load()` migrates the pre-2.0 Twitch-only layout (`{ twitch: {...} }` → `platforms.twitch`) and fills missing keys from defaults. Setup can complete with **zero** platforms enabled; platforms are added later in Settings, and `PUT /api/settings` reconnects any platform whose config changed.
 
 ### Platform adapters (`src/platforms/`)
 `types.ts` defines `ChatPlatform` (`connect/disconnect/status/ban/timeout/unban/deleteMessage` + `capabilities`) and `IncomingMessage`. Twitch deletes via Helix `DELETE /moderation/chat` (scope `moderator:manage:chat_messages`), YouTube via `liveChatMessages.delete` with the InnerTube message id — both best effort, since a timeout/ban already purges the user's recent chat on those platforms. `registry.ts` holds the three singletons and `connectAll()`; each adapter no-ops (and disconnects) when its `enabled` flag is off, and retries every 60 s when the channel isn't live.
@@ -77,42 +79,57 @@ Both `youtubei.js` and `tiktok-live-connector` are **ESM-only**; the adapters lo
 ```
 platform adapter → chatHub.publish(IncomingMessage)
   → historyStore.addMessage (per-user, keyed `${platform}:${userId}`, last 50)
-  → analysisQueue.add        (skips broadcaster/moderator roles when skipTrustedRoles)
-      link policy `suppress`/`ban`: services/linkDetector.ts (regex, explicit TLD list, allowlist) → card
-      "Link: <domain>" (spam, sev 3, suggestedAction timeout/ban, deleteMessages: true) with NO AI call; return
+  → analysisQueue.add        (AnalysisQueue in services/analysisEngine.ts; skips broadcaster/moderator roles when skipTrustedRoles)
+      1. link policy `suppress`/`ban`: services/linkDetector.ts (regex, explicit TLD list, allowlist) → card
+         "Link: <domain>" (spam, sev 3, source 'link', suggestedAction timeout/ban, deleteMessages) — NO AI call; return
+      2. rules: services/ruleEngine.ts evaluateRules() — first enabled match (words / regex / caps / repeat)
+         → card "Rule: <name>" (rule.category, sev 3, source 'rule', rule.action, rule.deleteMessage) — NO AI call; return
+      3. otherwise batch for the AI
   → 500 ms tick, ≥2 s between AI calls, one user per tick, messages joined with " . "
   → aiService.analyzeMessage → OllamaProvider | GoogleProvider → promptBuilder → JSON verdict
-      {flagged, category, severity 1-5, reason, suggestedAction}; normalized in aiService
-  → analysisQueue.routeFlag:
+      {flagged, category, severity 1-5, reason, suggestedAction}; normalizeVerdict() in aiService
+  → routeVerdict() (services/moderationPipeline.ts, pure):
       hard floor (sev 5, or hate/threat at sev ≥4)            → queue, always
       category disabled                                        → note
-      sev ≥ effectiveMinSeverity (lenient 4 / balanced 3 / strict 2, +1 while flood breaker is on) → queue
+      sev ≥ effectiveMinSeverity (lenient 4 / balanced 3 / strict 2, +1 while FloodBreaker is on) → queue
       near-miss + ≥2 near-miss notes in 10 min (or ≥3 total)   → queue, reason prefixed "Repeated:"
       otherwise                                                → historyStore.addNote (amber dot in UI)
-  → actionQueue.addOrAppend (one pending card per user; keeps last 8 messages / 3 reasons)
+  → actionQueue.addOrAppend (one pending card per user; keeps last 8 messages / 3 reasons; never restarts a countdown)
+      link/rule cards get autoExecuteAt = now + autoGraceSeconds when moderation.autoEnabled && (linksAuto | rule.auto)
   → SSE `/api/chat/stream` pushes `message` and `action` events to the dashboard
-  → POST /api/actions/:id/resolve → platform.ban/timeout (resolved only after the call succeeds) | discarded
-      + platform.deleteMessage(id) for each messageId when action.deleteMessages (best effort, failures reported in the response)
+  → services/autoExecutor.ts: timer per card with autoExecuteAt → executeSanction(by: 'auto') → resolve;
+      POST /api/actions/:id/hold clears autoExecuteAt (card stays); a failed auto sanction also holds the card
+  → POST /api/actions/:id/resolve → services/sanctions.ts executeSanction() | discarded
+      executeSanction: platform.ban/timeout (resolved only after the call succeeds) + platform.deleteMessage(id)
+      for each messageId when deleteMessages (best effort) + historyStore.updateUserStatus + sanctionLog entry
+      (sanctions.json: action, source ai|link|rule|manual, by streamer|auto, message snippets)
+  → POST /api/sanctions/:id/revert → revertSanction(): platform.unban, entry marked reverted, 'unban' entry logged
 ```
 Things that are easy to get wrong:
 - **Providers throw; `AIService` fails open** (`flagged:false`) and records `lastError`, surfaced in `/api/status.ai` and the Topbar (amber pill). Don't swallow errors inside a provider.
 - **Flood breaker**: rolling window of 50 verdicts; >50 % flagged raises the threshold by 1 until <30 %. Stats are in `/api/status.ai` (`flagRate`, `floodActive`).
 - The prompt (`promptBuilder.ts`) is tuned for small models: it lists explicit "ARE / are NOT violations" examples. `gemma3:4b` still over-weights repetition and the literal word "hate"; adjust examples rather than adding more CRITICAL-style instructions, which made it paranoid. When the link policy is not `allow`, the prompt also tells the model that deliberately obfuscated links (`bit(dot)ly`, `discord . gg`) are spam — the regex only catches real URLs.
-- Dismiss writes nothing anywhere (the old false-positive store is gone).
+- Dismiss writes nothing anywhere (the old false-positive store is gone). Approving, auto-executing and the manual `/moderate` route all go through `executeSanction()` — don't call `platform.ban/timeout` from a route directly, or the Log tab and user status drift.
+- **Auto mode never touches AI verdicts.** Only `source: 'link'` / `'rule'` cards get an `autoExecuteAt`; keep it that way, the streamer relies on it.
+- Rules are validated on both sides (`validateRule()` in `ruleEngine.ts`; `PUT /api/settings` answers 400 for a bad regex). `words` and `repeat` compare after `normalizeText()` (lower-case, accents stripped); `repeat` needs the user's recent messages, which `AnalysisQueue` fetches from `historyStore` minus the current one.
+
+### AI bench
+`npm run bench:ai` (`src/scripts/bench_ai.ts`) runs `bench/dataset.json` — 82 labelled messages, English + French, `[slur]` placeholders instead of real slurs — through a provider and prints precision / recall / F1 for "would produce a card" (it applies `routeVerdict()` like the live pipeline), the per-language breakdown, the false positives / negatives with the model's reason, category accuracy and latency; results go to `bench/results/` (gitignored). `--provider`, `--model`, `--api-key`, `--sensitivity`, `--lang`, `--limit` override the saved settings through `ProviderOverrides` / `PromptOptions` without writing anything. Run it before and after touching `promptBuilder.ts`. Baseline `gemma3:4b`, balanced: EN 100 % F1, FR ≈ 93 % (it reads "ce son il tue" and "la maj 1 . 3" as threats).
 
 ### Version and update check
 `src/version.ts` reads `server/package.json` (`require`, inlined by esbuild) — the only place the version lives; root `package.json` mirrors it for `npm run release`. `services/updateCheck.ts` asks the GitHub Releases API 10 s after start and daily, compares with `compareVersions()`, and `/api/system/info` exposes `{ version, dataDir, update }`; the Topbar shows a dismissible banner (dismissal per version in `localStorage`).
 
 ### API conventions
-All routes in `src/server.ts` under `/api/*` plus `/auth/{twitch,youtube}[/callback]`. JSON responses `{ success: true, ... }` or `{ error }`. Users are addressed by URL-encoded key `platform:userId`. `POST /api/setup` and `PUT /api/settings` return `nextAuthUrl` when an enabled platform still needs OAuth; the callbacks chain Twitch → YouTube → `/`. `/api/debug/message` and `/api/debug/flag` take a `platform` and go through the real pipeline (debug flags use role `broadcaster` so the AI doesn't double-flag them).
+All routes in `src/server.ts` under `/api/*` plus `/auth/{twitch,youtube}[/callback]`. JSON responses `{ success: true, ... }` or `{ error }`. Users are addressed by URL-encoded key `platform:userId`. `POST /api/setup` and `PUT /api/settings` return `nextAuthUrl` when an enabled platform still needs OAuth; the callbacks chain Twitch → YouTube → `/`. `/api/debug/message` and `/api/debug/flag` take a `platform` and go through the real pipeline (debug flags use role `broadcaster` so the AI doesn't double-flag them). Other routes worth knowing: `GET /api/system/info` (version, data dir, update), `GET /api/sanctions?limit=` + `POST /api/sanctions/:id/revert`, `POST /api/actions/:id/hold`, `POST /api/users/prune`, `POST /api/settings/export` (returns the `.twbackup` as an attachment) + `POST /api/settings/import { password, data }` (replaces settings, reconnects platforms, returns `nextAuthUrl`). `/api/status` carries `sanctions.today` and `auto { enabled, scheduled }`.
 
 ## Client architecture
 
-- No router. `App.tsx` holds `activeTab` (`moderation | users | debug | settings`) and fetched state; it polls `/api/users` + `/api/status` + `/api/actions` every 2 s and subscribes to the SSE stream through `hooks/useChatStream.ts` (chat messages + instant action-queue updates). `SetupPage` renders until `/api/setup/status` says complete.
+- No router. `App.tsx` holds `activeTab` (`moderation | users | log | debug | settings`) and fetched state; it polls `/api/users` + `/api/status` + `/api/actions` every 2 s and subscribes to the SSE stream through `hooks/useChatStream.ts` (chat messages + instant action-queue updates). `SetupPage` renders until `/api/setup/status` says complete.
 - `components/ModerationView.tsx` is the split view (`LiveChat` | queue of `ActionCard`s); below `lg` it becomes a Chat/Queue toggle. `Sidebar` is hidden below `md`; `MobileNav` (same file) is the bottom tab bar.
 - `components/platforms/PlatformCards.tsx` — the Twitch/YouTube/TikTok cards used by both the wizard (`mode="setup"`) and Settings (`mode="settings"`, adds status + Connect/Re-authenticate links).
 - `platformMeta.ts` holds per-platform label/colors (kept out of `PlatformBadge.tsx` for react-refresh lint). Moderation buttons everywhere are gated on `status.platforms[p].capabilities`.
-- **Types are duplicated by hand** between `server/src/store/types.ts` + `settings.ts` and `client/src/types.ts`. Change both.
+- `components/SanctionLog.tsx` (Log tab, polls `/api/sanctions` every 5 s while visible), `RulesEditor.tsx` (list + inline form, mirrors the server validation), `BackupPanel.tsx` (export/import with `prompt()`/`confirm()`), `ActionCard.tsx` (`useCountdown` for `autoExecuteAt`, Hold button, link/rule note).
+- **Types are duplicated by hand** between `server/src/store/types.ts` + `settings.ts` (+ `Rule` in `services/ruleEngine.ts`) and `client/src/types.ts`. Change both.
 - Tailwind v4 via `@tailwindcss/postcss`; `tailwind.config.js` adds `primary`, `danger`, `dim`, `dark` colors and `font-inter`. Follow `design_guidelines.md` for new UI.
 
 ### Tests

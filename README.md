@@ -21,6 +21,9 @@ Unlike traditional bots that ban instantly, TwitchWatcher **queues suspicious me
 *   **AI Moderation**: Supports **Ollama** (Local, Free) and **Google Gemini** (Cloud, Fast).
 *   **Split-view Moderation tab**: live chat on the left, the AI's pending actions on the right. Flagged messages are highlighted inline; hover any message for a quick timeout/ban.
 *   **Tunable, not trigger-happy**: sensitivity levels, category toggles, per-user *notes* for borderline messages, and a flood breaker that reacts when the AI starts flagging everything.
+*   **Your own rules, before the AI**: banned words, regular expressions, caps lock and repeated messages become cards instantly — and can optionally be executed automatically after a countdown you can stop.
+*   **Every sanction is logged** in the Log tab, with an **Undo** button.
+*   **Backups**: export all your settings (keys included) to a password-protected file and restore them on another PC.
 *   **Network Access**: Control the dashboard from your phone or tablet via local network (QR Code included).
 *   **Privacy First**: All chat logs and user data are stored locally on your machine.
 
@@ -110,7 +113,11 @@ We take security seriously. Here is how your data is handled:
 ### The Moderation tab
 *   **Live Chat** (left): every message from every enabled platform, newest at the bottom. Filter by platform with the chips. Messages the AI queued are highlighted in red with the reason. Hover a message for quick **Timeout** / **Ban** buttons (where the platform allows it).
 *   **Action Required** (right): one card per flagged user. **Timeout** or **Ban** executes on the platform; **Dismiss** just clears the card. TikTok cards can only be dismissed — handle the user in the TikTok app.
+*   Cards created by a rule or the link policy tell you exactly what approving does (e.g. *delete the message and time out the user*). In auto mode they show a countdown and a **Hold** button.
 *   On a phone the two panes become a **Chat | Queue** toggle.
+
+### Log
+Every timeout, ban, unban and message deletion — whether you clicked it, a rule executed it automatically, or the AI suggested it — with the reason and the offending messages. **Undo** lifts a ban or timeout (on Twitch/YouTube; for YouTube only bans made from the app can be lifted).
 
 ### Live Users
 Everyone who has chatted, across platforms. Click a user to see their history and any **AI notes** — borderline flags that stayed below your sensitivity threshold.
@@ -120,7 +127,17 @@ Everyone who has chatted, across platforms. Click a user to see their history an
 *   **Sensitivity**: *Lenient* / *Balanced* / *Strict* sets the severity a flag needs to become a card. Anything below becomes a note on the user instead. Explicit slurs and threats always reach the queue.
 *   **Categories**: opt out of e.g. vulgarity or spam. Hate speech and threats are always on.
 *   **Links**: *Allow* (default), *Suppress* (delete the message + time out the user) or *Ban* (delete the message + ban the user). Any link outside your allowlist (`youtube.com`, `clips.twitch.tv`, …) becomes a card instantly, without the AI — **nothing is deleted or sanctioned until you approve the card**. Disguised links like `bit(dot)ly` are left to the AI, which is told to treat them as spam.
+*   **Rules**: your own deterministic filters, checked before the AI: banned *words / phrases* (whole words, accents ignored), a *regular expression*, *caps lock* (long, mostly upper-case messages) or a *repeated message*. Each rule has a category, a sanction (timeout or ban) and whether the message is deleted. A rule hit becomes a card immediately, without any AI call.
+*   **Auto mode** (off by default): a rule — or the link policy — can execute its sanction by itself after a grace period (10 s by default). The card shows a countdown; **Hold** keeps it for you to decide, **Dismiss** cancels it. AI verdicts are never executed automatically.
+
+> [!WARNING]
+> Auto mode acts on your behalf. Test a rule with the countdown a few times before turning its *auto* switch on, and keep an eye on the Log tab.
+
 *   If the AI starts flagging more than half of chat, a **flood breaker** temporarily raises the threshold and shows a banner — a hint to lower the sensitivity or switch model.
+
+### Settings → General
+*   **Keep inactive users for N days** (90 by default, 0 = forever): chatters who haven't written or been flagged for that long are removed from the Live Users list; banned users are always kept. **Purge now** applies it immediately.
+*   **Backup**: **Export settings…** writes a `.twbackup` file encrypted with a password of your choice; it contains everything, including API keys and OAuth tokens, so it can be imported on another computer. **Import settings…** replaces all current settings with the file's content and reconnects the platforms.
 
 ### Mobile Access (QR Code)
 Want to use your iPad or Phone as a moderation deck?
@@ -134,7 +151,9 @@ Want to use your iPad or Phone as a moderation deck?
 ## 🛠️ Troubleshooting
 
 *   **"App works but AI isn't flagging anything"**: Check the AI pill in the top bar — amber means the last analysis failed (hover for the error). Ensure Ollama is running and the model exists (`ollama pull gemma3:4b`), or that your Google AI key is valid.
-*   **"The AI flags everything"**: Lower the sensitivity in Settings → Moderation, or use a larger model. The flood breaker will also kick in automatically.
+*   **"The AI flags everything"**: Lower the sensitivity in Settings → Moderation, or use a larger model. The flood breaker will also kick in automatically. Developers can compare models and prompts with `npm run bench:ai` in `server/` (English + French test set).
+*   **"A rule / auto mode sanctioned someone by mistake"**: open the **Log** tab and click **Undo** on the entry, then adjust the rule (or turn its *auto* switch off).
+*   **"I lost my settings after moving to a new PC"**: `settings.json` only works on the machine that wrote it. Use **Settings → General → Export settings…** on the old PC and **Import settings…** on the new one.
 *   **"Twitch Auth Failed"**: Double-check your Client ID and Secret, and ensure the Redirect URL in Twitch Console matches `http://localhost:3000/auth/twitch/callback`.
 *   **"YouTube: Channel is not live"**: The app only attaches to an active live stream; it retries every minute. You can also paste a specific video ID in the YouTube settings.
 *   **"TikTok: Not live"**: TikTok can only be watched while that account is streaming; the app retries every minute.

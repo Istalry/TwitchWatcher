@@ -11,6 +11,17 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 - `deleteMessage` platform capability (Twitch Helix, YouTube Data API); link cards delete the offending message(s) on approval.
+- **Log tab**: every timeout, ban, unban and message deletion is journaled in `sanctions.json` (who, why, AI / link / rule / manual, streamer or auto) with an **Undo** button that lifts the ban or timeout.
+- **Rules**: deterministic rules evaluated before the AI (banned words/phrases, regular expression, caps lock, repeated message), each with its own category, sanction and "delete message" flag. Rule hits become cards without an AI call.
+- **Auto mode** (off by default): a rule or the link policy can execute its sanction automatically after a grace period (10 s by default) shown as a countdown on the card, with **Hold** to keep the card for a manual decision. AI verdicts are never executed automatically.
+- **User-log retention**: users inactive for 90 days (configurable, 0 = keep forever) are purged at startup and daily; banned users are kept. "Purge now" in Settings → General.
+- **Settings backup**: export all settings (including API keys and OAuth tokens) to a password-encrypted `.twbackup` file and import it on any machine.
+- AI prompt bench (`npm run bench:ai`) with an English + French labelled dataset; providers and the prompt builder accept overrides so a model can be evaluated without touching the settings.
+- Server tests for the moderation pipeline (routing, flood breaker, analysis queue, rules, auto executor, sanction log, retention, backup).
+
+### Changed
+- The moderation prompt lists French casual uses of "tue"/"mort", untargeted swearing and "selling followers" among its examples.
+- `POST /api/actions/:id/resolve` and the manual moderation route share one sanction path, so message deletion, user status and the journal stay consistent.
 
 ## [2.0.0] - 2026-09-18
 

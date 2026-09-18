@@ -48,7 +48,19 @@ Done items are kept as a record of what exists; unchecked items are the roadmap.
 - [x] Obfuscated links (`bit(dot)ly`, `discord . gg`) → prompt clause under spam, with a version-number counter-example
 - [x] Settings UI (mode + allowlist), server + client tests
 
+## v2.1 — Rules, auto mode, log, backup (done)
+- [x] **Sanction log** (`sanctions.json`, Log tab): every timeout / ban / unban / deletion with source (AI, link, rule, manual) and author (streamer, auto); **Undo** via `platform.unban`
+- [x] **Deterministic rules** before the AI: words / regex / caps / repeat, per-rule category, sanction and delete flag; validated server + client; editor in Settings → Moderation
+- [x] **Auto mode** (opt-in, rules + links only, never AI): master switch, grace period with countdown, Hold / Dismiss, `AutoExecutor`
+- [x] **Shared sanction path** (`services/sanctions.ts`) for approve / manual / auto
+- [x] **Retention**: `retentionDays` (90, 0 = never), banned users kept, sweep at startup + daily, Purge now
+- [x] **Backup**: `.twbackup` export / import, pbkdf2 + AES-256-GCM, tokens included, restorable elsewhere
+- [x] **AI bench**: `npm run bench:ai`, `bench/dataset.json` (EN + FR, `[slur]` placeholders), provider / prompt overrides
+- [x] **Server tests** of the pipeline through dependency injection (`AnalysisQueue`, `AutoExecutor`, routing, flood breaker, rules, sanction log, retention, backup)
+
 ## Known limitations / ideas
-- [ ] Server tests cover only pure modules; the pipeline (`analysisQueue`, stores) still has import side effects that make it hard to test
-- [ ] Small models (`gemma3:4b`) over-weight repetition and the literal word "hate" — evaluate a prompt/few-shot set per model, or a larger default model
+- [ ] `gemma3:4b` reads French idioms literally ("ce son il tue", "la maj 1 . 3" → threat); try a few-shot block per language or a larger default model — measure with `npm run bench:ai --lang fr`
+- [ ] Bench: add a `--runs N` option to average out the model's non-determinism
+- [ ] Sanction log: filter by source / platform, export as CSV
+- [ ] Rules: import / export a rule set separately from the full backup; test a rule against a sample message in the editor
 - [ ] Update README screenshots (`resources/*.png`) to the v2 Moderation tab
