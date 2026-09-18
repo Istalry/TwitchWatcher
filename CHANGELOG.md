@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+- Link policy is now *Allow* / *Suppress* (delete message + timeout) / *Ban* (delete message + ban). The card explains what approval does; nothing happens until the streamer confirms. Existing *Flag* / *Block* settings become *Suppress*.
+
+### Added
+- `deleteMessage` platform capability (Twitch Helix, YouTube Data API); link cards delete the offending message(s) on approval.
+
 ## [2.0.0] - 2026-09-18
 
 ### Added

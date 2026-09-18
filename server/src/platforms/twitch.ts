@@ -12,7 +12,7 @@ const HELIX = 'https://api.twitch.tv/helix';
 
 export class TwitchPlatform implements ChatPlatform {
     public readonly id = 'twitch' as const;
-    public readonly capabilities: PlatformCapabilities = { ban: true, timeout: true, unban: true };
+    public readonly capabilities: PlatformCapabilities = { ban: true, timeout: true, unban: true, deleteMessage: true };
 
     private client: tmi.Client | null = null;
     private broadcasterId: string | null = null; // Channel Owner
@@ -220,6 +220,19 @@ export class TwitchPlatform implements ChatPlatform {
 
         historyStore.updateUserStatus(userKey('twitch', userId), 'active');
         console.log(`[twitch] Unbanned ${userId}`);
+    }
+
+    public async deleteMessage(messageId: string) {
+        if (!this.broadcasterId || !this.moderatorId) throw new Error('Not connected to Twitch (IDs unknown)');
+        try {
+            await axios.delete(
+                `${HELIX}/moderation/chat?broadcaster_id=${this.broadcasterId}&moderator_id=${this.moderatorId}&message_id=${encodeURIComponent(messageId)}`,
+                { headers: await this.helixHeaders() }
+            );
+        } catch (err: any) {
+            throw new Error(err.response?.data?.message || err.message);
+        }
+        console.log(`[twitch] Deleted message ${messageId}`);
     }
 }
 

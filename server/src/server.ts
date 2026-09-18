@@ -257,8 +257,28 @@ app.post('/api/actions/:id/resolve', async (req, res) => {
             const duration = parseInt(banDuration) || settingsStore.get().defaultTimeoutDuration || 600;
             await platform.timeout(action.userId, duration, reason);
         }
+
+        // Link policy: also remove the message(s). Best effort — the sanction above is what matters,
+        // and Twitch/YouTube already purge a timed-out/banned user's recent chat.
+        let deleted = 0;
+        const deleteFailures: string[] = [];
+        if (action.deleteMessages && platform.capabilities.deleteMessage) {
+            for (const messageId of action.messageIds) {
+                try {
+                    await platform.deleteMessage(messageId);
+                    deleted++;
+                } catch (err) {
+                    deleteFailures.push(errorMessage(err));
+                }
+            }
+            if (deleteFailures.length) console.warn(`[resolve] ${deleteFailures.length} message deletion(s) failed on ${action.platform}:`, deleteFailures[0]);
+        }
+
         actionQueue.resolve(id, 'approved'); // only after the platform call succeeded, so a failure can be retried
-        res.json({ success: true, executed: true, message: 'Action approved and executed.' });
+        const summary = action.deleteMessages
+            ? ` ${deleted} message(s) deleted${deleteFailures.length ? `, ${deleteFailures.length} could not be deleted (${deleteFailures[0]})` : ''}.`
+            : '';
+        res.json({ success: true, executed: true, message: `Action approved and executed.${summary}` });
     } catch (err) {
         console.error(`Failed to execute ${capability} on ${action.platform}:`, errorMessage(err));
         res.status(500).json({ error: `Failed to execute ${capability}: ${errorMessage(err)}` });

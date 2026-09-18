@@ -9,7 +9,7 @@ interface ActionCardProps {
     onResolve: (ids: string[], resolution: 'approved' | 'discarded', banDuration?: string) => void;
 }
 
-const FULL_CAPABILITIES: PlatformCapabilities = { ban: true, timeout: true, unban: true };
+const FULL_CAPABILITIES: PlatformCapabilities = { ban: true, timeout: true, unban: true, deleteMessage: true };
 
 export function ActionCard({ actions, capabilities = FULL_CAPABILITIES, onResolve }: ActionCardProps) {
     if (actions.length === 0) return null;
@@ -22,6 +22,7 @@ export function ActionCard({ actions, capabilities = FULL_CAPABILITIES, onResolv
     // Highlight the strongest suggestion across the coalesced actions (none < timeout < ban).
     const suggested = actions.some(a => a.suggestedAction === 'ban') ? 'ban'
         : actions.some(a => a.suggestedAction === 'timeout') ? 'timeout' : 'none';
+    const deletesMessages = actions.some(a => a.deleteMessages);
 
     // Aggregate reasons (a coalesced action carries several, joined with " | ")
     const distinctReasons = Array.from(new Set(actions.flatMap(a => a.flaggedReason.split(' | '))));
@@ -91,6 +92,13 @@ export function ActionCard({ actions, capabilities = FULL_CAPABILITIES, onResolv
                         ))}
                     </div>
                 </div>
+
+                {deletesMessages && canModerate && (
+                    <p className="text-[11px] text-amber-300/90 font-bold mb-3 flex items-center gap-2" data-testid="link-policy-note">
+                        <span aria-hidden>⚠</span>
+                        Link policy: approving deletes the message{actions.length > 1 || mainAction.messageIds.length > 1 ? 's' : ''} and {suggested === 'ban' ? 'bans' : 'times out'} the user. Nothing happens until you confirm.
+                    </p>
+                )}
 
                 <div className="flex flex-wrap gap-3">
                     <button

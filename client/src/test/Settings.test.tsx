@@ -13,7 +13,7 @@ const baseSettings: AppSettings = {
         sensitivity: 'balanced',
         categories: { hate: true, harassment: true, threat: true, spam: true, vulgarity: true, other: true },
         skipTrustedRoles: true,
-        links: 'flag',
+        links: 'suppress',
         linkAllowlist: ['youtube.com'],
     },
     platforms: DEFAULT_PLATFORM_SETTINGS,
@@ -41,7 +41,7 @@ describe('Settings — links and general', () => {
     it('loads the link policy and allowlist from the server', async () => {
         render(<Settings info={{ version: '2.0.0', dataDir: 'C:\\Users\\me\\AppData\\Roaming\\TwitchWatcher', update: null }} />);
 
-        await waitFor(() => expect(screen.getByRole('radio', { name: /Flag/ })).toHaveAttribute('aria-checked', 'true'));
+        await waitFor(() => expect(screen.getByRole('radio', { name: /Suppress/ })).toHaveAttribute('aria-checked', 'true'));
         expect(screen.getByLabelText(/Allowed domains/)).toHaveValue('youtube.com');
         expect(screen.getByTestId('data-dir')).toHaveTextContent('AppData\\Roaming\\TwitchWatcher');
         expect(screen.getByLabelText(/Check GitHub for new releases/)).toBeChecked();

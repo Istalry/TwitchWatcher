@@ -1,7 +1,7 @@
 import { type ChatMessage, type ChatUser, type PendingAction, type Platform, type PlatformStatus } from '../types';
 
-export const capsFull = { ban: true, timeout: true, unban: true };
-export const capsNone = { ban: false, timeout: false, unban: false };
+export const capsFull = { ban: true, timeout: true, unban: true, deleteMessage: true };
+export const capsNone = { ban: false, timeout: false, unban: false, deleteMessage: false };
 
 export const platformsAllEnabled: Record<Platform, PlatformStatus> = {
     twitch: { enabled: true, connected: true, target: 'chan', capabilities: capsFull },

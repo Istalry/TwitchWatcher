@@ -20,7 +20,7 @@ export const buildModerationPrompt = (message: string, history: string[] = [], p
     const settings = settingsStore.get();
     const language = settings.aiLanguage;
     const { sensitivity, categories, links } = settings.moderation;
-    const moderateLinks = links !== 'allow' && categories.spam !== false;
+    const moderateLinks = links !== 'allow' && categories.spam !== false; // plain URLs never reach the AI; disguised ones do
 
     const enabledCategories = MODERATION_CATEGORIES.filter(c => categories[c] !== false);
     const categoryList = enabledCategories.map(c => `- "${c}": ${CATEGORY_DESCRIPTIONS[c]}`).join('\n');

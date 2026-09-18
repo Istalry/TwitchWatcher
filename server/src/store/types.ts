@@ -60,7 +60,9 @@ export interface PendingAction {
     flaggedReason: string;
     category: ModerationCategory;
     severity: number;
-    suggestedAction: 'none' | 'timeout' | 'ban'; // 'none' = review only (e.g. a link that is merely flagged)
+    suggestedAction: 'none' | 'timeout' | 'ban';
+    /** Link policy cards: approving also deletes the offending message(s) where the platform allows it. */
+    deleteMessages?: boolean;
     timestamp: number;
     status: 'pending' | 'approved' | 'discarded';
 }

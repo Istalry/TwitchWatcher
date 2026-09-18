@@ -40,6 +40,7 @@ export class ActionQueue extends EventEmitter {
             existing.flaggedReason = [...reasons, action.flaggedReason].slice(-MAX_COALESCED_REASONS).join(' | ');
         }
         existing.severity = Math.max(existing.severity, action.severity);
+        if (action.deleteMessages) existing.deleteMessages = true;
         // Never downgrade the suggestion: none < timeout < ban.
         const rank = { none: 0, timeout: 1, ban: 2 } as const;
         if (rank[action.suggestedAction] > rank[existing.suggestedAction]) existing.suggestedAction = action.suggestedAction;

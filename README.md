@@ -119,7 +119,7 @@ Everyone who has chatted, across platforms. Click a user to see their history an
 ### Settings → Moderation
 *   **Sensitivity**: *Lenient* / *Balanced* / *Strict* sets the severity a flag needs to become a card. Anything below becomes a note on the user instead. Explicit slurs and threats always reach the queue.
 *   **Categories**: opt out of e.g. vulgarity or spam. Hate speech and threats are always on.
-*   **Links**: *Allow* (default), *Flag* (any link outside your allowlist becomes a card, instantly and without the AI) or *Block* (same, with Timeout pre-selected). Add your own domains to the allowlist (`youtube.com`, `clips.twitch.tv`, …). Disguised links like `bit(dot)ly` are left to the AI, which is told to treat them as spam.
+*   **Links**: *Allow* (default), *Suppress* (delete the message + time out the user) or *Ban* (delete the message + ban the user). Any link outside your allowlist (`youtube.com`, `clips.twitch.tv`, …) becomes a card instantly, without the AI — **nothing is deleted or sanctioned until you approve the card**. Disguised links like `bit(dot)ly` are left to the AI, which is told to treat them as spam.
 *   If the AI starts flagging more than half of chat, a **flood breaker** temporarily raises the threshold and shows a banner — a hint to lower the sensitivity or switch model.
 
 ### Mobile Access (QR Code)

@@ -37,4 +37,18 @@ describe('ActionCard', () => {
         expect(screen.queryByText('Timeout')).not.toBeInTheDocument();
         expect(screen.getByText(/no moderation API/i)).toBeInTheDocument();
     });
+
+    it('explains the link policy and highlights the suggested sanction', () => {
+        const linkAction = makeAction({ flaggedReason: 'Link: bit.ly', category: 'spam', suggestedAction: 'ban', deleteMessages: true });
+        render(<ActionCard actions={[linkAction]} onResolve={vi.fn()} />);
+
+        expect(screen.getByTestId('link-policy-note')).toHaveTextContent(/deletes the message and bans the user/);
+        expect(screen.getByText('BAN USER')).toHaveAttribute('title', 'Suggested action');
+        expect(screen.getByText('Timeout')).not.toHaveAttribute('title');
+    });
+
+    it('shows no link note for ordinary AI flags', () => {
+        render(<ActionCard actions={[mockAction]} onResolve={vi.fn()} />);
+        expect(screen.queryByTestId('link-policy-note')).not.toBeInTheDocument();
+    });
 });

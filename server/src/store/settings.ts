@@ -9,10 +9,10 @@ const SETTINGS_FILE = path.join(DATA_DIR, 'settings.json');
 const ALGORITHM = 'aes-256-gcm';
 
 export type Sensitivity = 'lenient' | 'balanced' | 'strict';
-export type LinkPolicy = 'allow' | 'flag' | 'block';
+export type LinkPolicy = 'allow' | 'suppress' | 'ban'; // suppress = delete message + timeout; ban = delete message + ban
 
 /** Bump when the on-disk shape changes in a way `migrate()` has to handle. */
-export const SETTINGS_SCHEMA_VERSION = 2;
+export const SETTINGS_SCHEMA_VERSION = 3;
 
 export interface TwitchSettings {
     enabled: boolean;
@@ -51,7 +51,7 @@ export interface ModerationSettings {
     sensitivity: Sensitivity;
     categories: Record<ModerationCategory, boolean>;
     skipTrustedRoles: boolean; // don't analyze broadcaster / platform moderators
-    links: LinkPolicy; // allow: ignore links; flag: queue a card; block: queue with timeout pre-selected
+    links: LinkPolicy; // every non-allowlisted link becomes a card the streamer must approve
     linkAllowlist: string[]; // domains that never get flagged (parent domains match subdomains)
 }
 
@@ -140,6 +140,15 @@ export function migrate(parsed: Record<string, unknown>): { settings: Record<str
             },
         };
         changed = true;
+    }
+
+    // v2 -> v3: link policy 'flag' / 'block' collapsed into 'suppress' (delete + timeout).
+    if (version < 3 && isObject(out.moderation)) {
+        const links = (out.moderation as Record<string, unknown>).links;
+        if (links === 'flag' || links === 'block') {
+            out = { ...out, moderation: { ...(out.moderation as Record<string, unknown>), links: 'suppress' } };
+            changed = true;
+        }
     }
 
     if (version < SETTINGS_SCHEMA_VERSION) {

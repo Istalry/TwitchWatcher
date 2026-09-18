@@ -37,7 +37,7 @@ const RETRY_MS = 60 * 1000;
  */
 export class YouTubePlatform implements ChatPlatform {
     public readonly id = 'youtube' as const;
-    public readonly capabilities: PlatformCapabilities = { ban: true, timeout: true, unban: true };
+    public readonly capabilities: PlatformCapabilities = { ban: true, timeout: true, unban: true, deleteMessage: true };
 
     private yt: Innertube | null = null;
     private chat: LiveChat | null = null;
@@ -269,6 +269,15 @@ export class YouTubePlatform implements ChatPlatform {
         banRegistry.clearYouTubeBan(userId);
         historyStore.updateUserStatus(userKey('youtube', userId), 'active');
         console.log(`[youtube] Unbanned ${userId}`);
+    }
+
+    public async deleteMessage(messageId: string) {
+        try {
+            await axios.delete(`${DATA_API}/liveChatMessages`, { params: { id: messageId }, headers: await this.apiHeaders() });
+        } catch (err: any) {
+            throw new Error(err.response?.data?.error?.message || err.message);
+        }
+        console.log(`[youtube] Deleted message ${messageId}`);
     }
 }
 

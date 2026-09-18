@@ -20,7 +20,7 @@ const RETRY_MS = 60 * 1000;
  */
 export class TikTokPlatform implements ChatPlatform {
     public readonly id = 'tiktok' as const;
-    public readonly capabilities: PlatformCapabilities = { ban: false, timeout: false, unban: false };
+    public readonly capabilities: PlatformCapabilities = { ban: false, timeout: false, unban: false, deleteMessage: false };
 
     private connection: TikTokConnection | null = null;
     private connected = false;
@@ -146,6 +146,10 @@ export class TikTokPlatform implements ChatPlatform {
 
     public async unban(): Promise<void> {
         throw new PlatformCapabilityError('tiktok', 'unban');
+    }
+
+    public async deleteMessage(): Promise<void> {
+        throw new PlatformCapabilityError('tiktok', 'deleteMessage');
     }
 }
 

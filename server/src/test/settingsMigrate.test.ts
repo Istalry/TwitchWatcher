@@ -26,6 +26,17 @@ describe('migrate', () => {
         expect(migrate(current)).toEqual({ settings: current, changed: false });
     });
 
+    it('collapses the old flag/block link policies into suppress (v2 -> v3)', () => {
+        for (const old of ['flag', 'block']) {
+            const { settings, changed } = migrate({ schemaVersion: 2, moderation: { links: old, sensitivity: 'strict' } });
+            expect(changed).toBe(true);
+            expect(settings.moderation).toEqual({ links: 'suppress', sensitivity: 'strict' });
+            expect(settings.schemaVersion).toBe(SETTINGS_SCHEMA_VERSION);
+        }
+        const kept = migrate({ schemaVersion: 2, moderation: { links: 'allow' } });
+        expect(kept.settings.moderation).toEqual({ links: 'allow' });
+    });
+
     it('only stamps the version when a v2-shaped file lacks it', () => {
         const { settings, changed } = migrate({ platforms: { tiktok: { enabled: true, username: 'x' } } });
         expect(changed).toBe(true);

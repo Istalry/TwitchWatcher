@@ -52,6 +52,7 @@ interface ActionInput {
     category: PendingAction['category'];
     severity: number;
     suggestedAction: PendingAction['suggestedAction'];
+    deleteMessages?: boolean;
 }
 
 function buildAction(input: ActionInput): PendingAction {
@@ -68,6 +69,7 @@ function buildAction(input: ActionInput): PendingAction {
         category: input.category,
         severity: input.severity,
         suggestedAction: input.suggestedAction,
+        ...(input.deleteMessages ? { deleteMessages: true } : {}),
         timestamp: Date.now(),
         status: 'pending',
     };
@@ -96,7 +98,8 @@ class AnalysisQueue {
 
         const key = userKey(msg.platform, msg.userId);
 
-        // Deterministic link policy: a plain URL never needs the AI.
+        // Deterministic link policy: a plain URL never needs the AI. The card still needs the streamer's approval;
+        // approving deletes the message and times out ('suppress') or bans ('ban') the user.
         const { links, linkAllowlist } = settingsStore.get().moderation;
         if (links !== 'allow') {
             const hits = disallowedLinks(msg.content, linkAllowlist);
@@ -111,7 +114,8 @@ class AnalysisQueue {
                     reason: `Link: ${domains}`,
                     category: 'spam',
                     severity: 3,
-                    suggestedAction: links === 'block' ? 'timeout' : 'none',
+                    suggestedAction: links === 'ban' ? 'ban' : 'timeout',
+                    deleteMessages: true,
                 }));
                 return;
             }

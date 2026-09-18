@@ -51,6 +51,7 @@ export interface PendingAction {
     category: ModerationCategory;
     severity: number;
     suggestedAction: 'none' | 'timeout' | 'ban';
+    deleteMessages?: boolean; // link policy: approving also deletes the message(s)
     timestamp: number;
     status: 'pending' | 'approved' | 'discarded';
 }
@@ -64,6 +65,7 @@ export interface PlatformCapabilities {
     ban: boolean;
     timeout: boolean;
     unban: boolean;
+    deleteMessage: boolean;
 }
 
 export interface PlatformStatus {
@@ -122,7 +124,7 @@ export interface PlatformSettingsMap {
     tiktok: TikTokSettings;
 }
 
-export type LinkPolicy = 'allow' | 'flag' | 'block';
+export type LinkPolicy = 'allow' | 'suppress' | 'ban';
 
 export interface ModerationSettings {
     sensitivity: Sensitivity;
@@ -161,9 +163,9 @@ export interface SystemInfo {
 export const EMPTY_STATUS: SystemStatus = {
     ai: { online: false, provider: 'unknown', model: '', lastError: null, analyzed: 0, flagged: 0, flagRate: null, floodActive: false, effectiveMinSeverity: 3 },
     platforms: {
-        twitch: { enabled: false, connected: false, target: '', capabilities: { ban: true, timeout: true, unban: true } },
-        youtube: { enabled: false, connected: false, target: '', capabilities: { ban: true, timeout: true, unban: true } },
-        tiktok: { enabled: false, connected: false, target: '', capabilities: { ban: false, timeout: false, unban: false } },
+        twitch: { enabled: false, connected: false, target: '', capabilities: { ban: true, timeout: true, unban: true, deleteMessage: true } },
+        youtube: { enabled: false, connected: false, target: '', capabilities: { ban: true, timeout: true, unban: true, deleteMessage: true } },
+        tiktok: { enabled: false, connected: false, target: '', capabilities: { ban: false, timeout: false, unban: false, deleteMessage: false } },
     },
 };
 

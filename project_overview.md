@@ -10,7 +10,7 @@ TwitchWatcher is a local, AI-powered auto-moderation dashboard for live streamer
 - **Flexible AI Providers**: Supports both local inference via **Ollama** (privacy-focused, free) and cloud inference via **Google Gemini** (higher performance).
 - **Structured Verdicts**: The prompt (`promptBuilder`) asks for a category and a 1-5 severity, taking the user's recent messages into account.
 - **Over-flagging Mitigation**: A sensitivity threshold and category toggles decide what becomes a card; borderline flags become *notes* on the user, repeated near-misses escalate, slurs/threats always reach the queue, and a flood breaker raises the threshold when the model starts flagging everything.
-- **Link Policy**: Plain URLs are caught deterministically (allow / flag / block, with an allowlist) without an AI call; the AI is only asked about deliberately disguised links.
+- **Link Policy**: Plain URLs are caught deterministically (allow / suppress = delete + timeout / ban = delete + ban, with an allowlist) without an AI call and always confirmed by the streamer; the AI is only asked about deliberately disguised links.
 
 ### 2. The Moderation Dashboard
 - **Modern UI**: A responsive, Neo-Brutalism inspired dashboard with a sidebar and topbar for easy navigation (bottom tab bar on phones).

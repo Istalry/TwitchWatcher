@@ -14,9 +14,9 @@ interface Props {
 }
 
 const LINK_OPTIONS: { id: LinkPolicy; label: string; hint: string }[] = [
-    { id: 'allow', label: 'Allow', hint: 'Links are ignored; only scam bait is judged by the AI.' },
-    { id: 'flag', label: 'Flag', hint: 'Any link outside the allowlist becomes a card to review.' },
-    { id: 'block', label: 'Block', hint: 'Same, with a timeout pre-selected on the card.' },
+    { id: 'allow', label: 'Allow', hint: 'Links are never flagged. The AI still catches scam bait.' },
+    { id: 'suppress', label: 'Suppress', hint: 'Delete the message and time out the user. You confirm each one from the queue.' },
+    { id: 'ban', label: 'Ban', hint: 'Delete the message and ban the user. You confirm each one from the queue.' },
 ];
 
 const SENSITIVITY_OPTIONS: { id: Sensitivity; label: string; hint: string }[] = [
@@ -263,7 +263,7 @@ export function Settings({ status = EMPTY_STATUS, info = null, onSaved }: Props)
                                     onBlur={() => updateModeration({ linkAllowlist: parseAllowlist(allowlistText) })}
                                 />
                                 <p className="text-[11px] text-zinc-500 mt-2">
-                                    Subdomains are covered (<code>twitch.tv</code> also allows <code>clips.twitch.tv</code>). Plain links are caught instantly without the AI; disguised ones ("bit(dot)ly") are left to the AI.
+                                    Links to these domains are always allowed; subdomains are covered (<code>twitch.tv</code> also allows <code>clips.twitch.tv</code>). Any other link creates a card instantly, without the AI, and nothing is deleted or sanctioned until you approve it. Disguised links ("bit(dot)ly") are left to the AI.
                                 </p>
                             </div>
                         )}

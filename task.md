@@ -43,8 +43,8 @@ Done items are kept as a record of what exists; unchecked items are the roadmap.
 - [x] Update check against GitHub Releases (daily, opt-out in Settings → General) with a Topbar banner; data folder shown in Settings
 
 ## Link blocking (done)
-- [x] Setting `moderation.links: allow | flag | block` + `linkAllowlist` (parent domains cover subdomains); trusted roles exempt
-- [x] Deterministic pass (`services/linkDetector.ts`, explicit TLD list, IPv4) before the AI → card `Link: <domain>` (spam, sev 3), no AI call; `block` pre-selects Timeout on the card
+- [x] Setting `moderation.links: allow | suppress | ban` + `linkAllowlist` (parent domains cover subdomains); trusted roles exempt
+- [x] Deterministic pass (`services/linkDetector.ts`, explicit TLD list, IPv4) before the AI → card `Link: <domain>` (spam, sev 3), no AI call; approval deletes the message and times out (`suppress`) or bans (`ban`) the user — the streamer always confirms
 - [x] Obfuscated links (`bit(dot)ly`, `discord . gg`) → prompt clause under spam, with a version-number counter-example
 - [x] Settings UI (mode + allowlist), server + client tests
 

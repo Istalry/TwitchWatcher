@@ -66,7 +66,7 @@ Every store and service exports a ready-made instance (`settingsStore`, `history
 `src/store/settings.ts` owns all config: `platforms.{twitch,youtube,tiktok}` (each with `enabled` + credentials/tokens), `moderation` (sensitivity, category toggles, skipTrustedRoles, `links` policy + `linkAllowlist`), `ai`, `aiLanguage`, `defaultTimeoutDuration`, `checkForUpdates`, `isSetupComplete`, `schemaVersion`. Persisted AES-256-GCM with a key derived from `hostname + OS username`; decrypt failure resets to defaults. `load()` migrates the pre-2.0 Twitch-only layout (`{ twitch: {...} }` → `platforms.twitch`) and fills missing keys from defaults. Setup can complete with **zero** platforms enabled; platforms are added later in Settings, and `PUT /api/settings` reconnects any platform whose config changed.
 
 ### Platform adapters (`src/platforms/`)
-`types.ts` defines `ChatPlatform` (`connect/disconnect/status/ban/timeout/unban` + `capabilities`) and `IncomingMessage`. `registry.ts` holds the three singletons and `connectAll()`; each adapter no-ops (and disconnects) when its `enabled` flag is off, and retries every 60 s when the channel isn't live.
+`types.ts` defines `ChatPlatform` (`connect/disconnect/status/ban/timeout/unban/deleteMessage` + `capabilities`) and `IncomingMessage`. Twitch deletes via Helix `DELETE /moderation/chat` (scope `moderator:manage:chat_messages`), YouTube via `liveChatMessages.delete` with the InnerTube message id — both best effort, since a timeout/ban already purges the user's recent chat on those platforms. `registry.ts` holds the three singletons and `connectAll()`; each adapter no-ops (and disconnects) when its `enabled` flag is off, and retries every 60 s when the channel isn't live.
 - `twitch.ts` — tmi.js for chat, Helix `/moderation/bans` for actions (needs both `moderatorId` = token owner and `broadcasterId`). `authService.getToken()` caches `/oauth2/validate` for 5 min; a Helix 401 invalidates and retries once.
 - `youtube.ts` — reads chat via **InnerTube** (`youtubei.js`, no key/quota) after resolving the channel's `/live` URL (or `videoIdOverride`); moderates via the **Data API** `liveChatBans` with a Google OAuth token (`services/googleAuth.ts`, scope `youtube.force-ssl`). The Data API can only delete a ban by the id it returned, so ids are persisted in `store/banRegistry.ts` (`bans.json`); `unban` still fails for bans made outside the app. Custom emoji runs render as `:shortcut:`.
 - `tiktok.ts` — `tiktok-live-connector` by username; **read-only** (`capabilities` all false). Chat payload fields: `user.id`, `user.displayId`, `user.nickname`, `content`, `common.msgId`.
@@ -78,8 +78,8 @@ Both `youtubei.js` and `tiktok-live-connector` are **ESM-only**; the adapters lo
 platform adapter → chatHub.publish(IncomingMessage)
   → historyStore.addMessage (per-user, keyed `${platform}:${userId}`, last 50)
   → analysisQueue.add        (skips broadcaster/moderator roles when skipTrustedRoles)
-      link policy `flag`/`block`: services/linkDetector.ts (regex, explicit TLD list, allowlist) → card
-      "Link: <domain>" (spam, sev 3, suggestedAction none/timeout) with NO AI call; return
+      link policy `suppress`/`ban`: services/linkDetector.ts (regex, explicit TLD list, allowlist) → card
+      "Link: <domain>" (spam, sev 3, suggestedAction timeout/ban, deleteMessages: true) with NO AI call; return
   → 500 ms tick, ≥2 s between AI calls, one user per tick, messages joined with " . "
   → aiService.analyzeMessage → OllamaProvider | GoogleProvider → promptBuilder → JSON verdict
       {flagged, category, severity 1-5, reason, suggestedAction}; normalized in aiService
@@ -92,6 +92,7 @@ platform adapter → chatHub.publish(IncomingMessage)
   → actionQueue.addOrAppend (one pending card per user; keeps last 8 messages / 3 reasons)
   → SSE `/api/chat/stream` pushes `message` and `action` events to the dashboard
   → POST /api/actions/:id/resolve → platform.ban/timeout (resolved only after the call succeeds) | discarded
+      + platform.deleteMessage(id) for each messageId when action.deleteMessages (best effort, failures reported in the response)
 ```
 Things that are easy to get wrong:
 - **Providers throw; `AIService` fails open** (`flagged:false`) and records `lastError`, surfaced in `/api/status.ai` and the Topbar (amber pill). Don't swallow errors inside a provider.

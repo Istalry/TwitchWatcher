@@ -4,6 +4,7 @@ export interface PlatformCapabilities {
     ban: boolean;
     timeout: boolean;
     unban: boolean;
+    deleteMessage: boolean;
 }
 
 /** Normalized chat message emitted by every platform adapter. */
@@ -36,6 +37,8 @@ export interface ChatPlatform {
     ban(userId: string, reason: string): Promise<void>;
     timeout(userId: string, seconds: number, reason: string): Promise<void>;
     unban(userId: string): Promise<void>;
+    /** Removes one chat message by its platform id. */
+    deleteMessage(messageId: string): Promise<void>;
 }
 
 export class PlatformCapabilityError extends Error {
