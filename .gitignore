@@ -29,6 +29,7 @@ server/settings.json
 server/settings.json.bak
 server/settings.json.unreadable-*
 server/bans.json
+server/sanctions.json
 
 # Build Artifacts
 server/dist

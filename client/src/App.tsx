@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, useRef } from 'react'
 import { UserList } from './components/UserList';
 import { Sidebar, MobileNav, type TabId } from './components/Sidebar';
 import { Topbar } from './components/Topbar';
+import { SanctionLog } from './components/SanctionLog';
 import { Settings } from './components/Settings';
 import { SetupPage } from './components/SetupPage';
 import { ModerationView } from './components/ModerationView';
@@ -255,6 +256,19 @@ function App() {
                 className="h-[calc(100vh-8rem)]"
               >
                 <UserList users={users} platforms={systemStatus.platforms} onDeleteUser={handleDeleteUser} />
+              </motion.div>
+            )}
+
+            {activeTab === 'log' && (
+              <motion.div
+                key="log"
+                initial={{ opacity: 0, x: 10 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -10 }}
+                transition={{ duration: 0.2 }}
+                className="h-[calc(100vh-8rem)]"
+              >
+                <SanctionLog platforms={systemStatus.platforms} onReverted={fetchData} />
               </motion.div>
             )}
 

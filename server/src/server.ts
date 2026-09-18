@@ -9,6 +9,8 @@ import open from 'open';
 
 import { historyStore } from './store/history';
 import { banRegistry } from './store/banRegistry';
+import { sanctionLog } from './store/sanctionLog';
+import { executeSanction, requestFromAction, revertSanction, unbanUser } from './services/sanctions';
 import { actionQueue, ActionEvent } from './store/actionQueue';
 import { settingsStore, AppSettings, PlatformSettingsMap } from './store/settings';
 import { ChatMessage, PLATFORMS, Platform, userKey } from './store/types';
@@ -102,6 +104,7 @@ app.get('/api/status', async (req, res) => {
             ...analysisQueue.stats(),
         },
         platforms: platformRegistry.statuses(),
+        sanctions: { today: sanctionLog.countSince(Date.now() - 24 * 60 * 60 * 1000) },
     });
 });
 
@@ -189,13 +192,11 @@ app.post('/api/users/:key/moderate', async (req, res) => {
     }
 
     try {
-        if (action === 'ban') {
-            await platform.ban(user.userId, 'Manual Ban');
-        } else if (action === 'timeout') {
-            const duration = settingsStore.get().defaultTimeoutDuration || 600;
-            await platform.timeout(user.userId, duration, 'Manual Timeout');
+        const target = { platform: user.platform, userId: user.userId, displayName: user.displayName };
+        if (action === 'unban') {
+            await unbanUser(target);
         } else {
-            await platform.unban(user.userId);
+            await executeSanction({ target, kind: action, reason: action === 'ban' ? 'Manual Ban' : 'Manual Timeout', source: 'manual', by: 'streamer' });
         }
         res.json({ success: true, message: `User ${action}ed` });
     } catch (err) {
@@ -249,31 +250,8 @@ app.post('/api/actions/:id/resolve', async (req, res) => {
     }
 
     try {
-        const reason = `Moderated: ${action.flaggedReason}`;
-        if (permanent) {
-            await platform.ban(action.userId, reason);
-        } else {
-            // Default to settings value if not specified or parsed
-            const duration = parseInt(banDuration) || settingsStore.get().defaultTimeoutDuration || 600;
-            await platform.timeout(action.userId, duration, reason);
-        }
-
-        // Link policy: also remove the message(s). Best effort — the sanction above is what matters,
-        // and Twitch/YouTube already purge a timed-out/banned user's recent chat.
-        let deleted = 0;
-        const deleteFailures: string[] = [];
-        if (action.deleteMessages && platform.capabilities.deleteMessage) {
-            for (const messageId of action.messageIds) {
-                try {
-                    await platform.deleteMessage(messageId);
-                    deleted++;
-                } catch (err) {
-                    deleteFailures.push(errorMessage(err));
-                }
-            }
-            if (deleteFailures.length) console.warn(`[resolve] ${deleteFailures.length} message deletion(s) failed on ${action.platform}:`, deleteFailures[0]);
-        }
-
+        const duration = permanent ? undefined : (parseInt(banDuration) || undefined);
+        const { deleted, deleteFailures } = await executeSanction(requestFromAction(action, capability, 'streamer', duration));
         actionQueue.resolve(id, 'approved'); // only after the platform call succeeded, so a failure can be retried
         const summary = action.deleteMessages
             ? ` ${deleted} message(s) deleted${deleteFailures.length ? `, ${deleteFailures.length} could not be deleted (${deleteFailures[0]})` : ''}.`
@@ -282,6 +260,24 @@ app.post('/api/actions/:id/resolve', async (req, res) => {
     } catch (err) {
         console.error(`Failed to execute ${capability} on ${action.platform}:`, errorMessage(err));
         res.status(500).json({ error: `Failed to execute ${capability}: ${errorMessage(err)}` });
+    }
+});
+
+// --- SANCTION LOG ---
+
+app.get('/api/sanctions', (req, res) => {
+    const limit = Math.min(1000, parseInt(String(req.query.limit)) || 200);
+    res.json(sanctionLog.list(limit));
+});
+
+app.post('/api/sanctions/:id/revert', async (req, res) => {
+    try {
+        const entry = await revertSanction(req.params.id);
+        res.json({ success: true, entry });
+    } catch (err) {
+        const msg = errorMessage(err);
+        const status = /not found/i.test(msg) ? 404 : /cannot be undone|Already undone|no API/i.test(msg) ? 400 : 500;
+        res.status(status).json({ error: msg });
     }
 });
 
@@ -328,6 +324,7 @@ app.post('/api/shutdown', (req, res) => {
     setTimeout(async () => {
         historyStore.flush();
         banRegistry.flush();
+        sanctionLog.flush();
         await platformRegistry.disconnectAll();
         process.exit(0);
     }, 1000);

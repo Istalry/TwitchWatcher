@@ -2,7 +2,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
-export const DATA_FILES = ['settings.json', 'users.json', 'bans.json'];
+export const DATA_FILES = ['settings.json', 'users.json', 'bans.json', 'sanctions.json'];
 
 const isPackaged = (): boolean => !!(process as any).pkg;
 

@@ -94,6 +94,29 @@ export interface SystemStatus {
         effectiveMinSeverity: number;
     };
     platforms: Record<Platform, PlatformStatus>;
+    sanctions?: { today: number };
+}
+
+export type SanctionKind = 'timeout' | 'ban' | 'unban' | 'delete';
+export type SanctionSource = 'ai' | 'link' | 'rule' | 'manual';
+
+export interface SanctionEntry {
+    id: string;
+    at: number;
+    platform: Platform;
+    userId: string;
+    userKey: string;
+    displayName: string;
+    action: SanctionKind;
+    duration?: number;
+    reason: string;
+    source: SanctionSource;
+    ruleName?: string;
+    by: 'streamer' | 'auto';
+    messageIds: string[];
+    messages: string[];
+    deletedMessages?: number;
+    reverted?: { at: number };
 }
 
 export interface TwitchSettings {

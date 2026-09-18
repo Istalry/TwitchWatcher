@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AnalysisQueue, AnalysisQueueDeps } from '../services/analysisEngine';
 import { ActionQueue } from '../store/actionQueue';
 import type { ModerationSettings } from '../store/settings';
-import type { ChatUser, UserNote } from '../store/types';
+import type { ChatUser, Platform, UserNote } from '../store/types';
 import type { IncomingMessage } from '../platforms/types';
 import type { Verdict } from '../services/ai/aiService';
 
@@ -31,7 +31,7 @@ class FakeHistory {
 function setup(over: { moderation?: Partial<ModerationSettings>; verdicts?: Verdict[] } = {}) {
     const moderation = { ...baseModeration, ...over.moderation };
     const verdicts = [...(over.verdicts ?? [])];
-    const ai = { analyzeMessage: vi.fn(async () => verdicts.shift() ?? { flagged: false, category: 'other' as const, severity: 1 }) };
+    const ai = { analyzeMessage: vi.fn(async (_text: string, _history: string[], _platform?: Platform): Promise<Verdict> => verdicts.shift() ?? { flagged: false, category: 'other', severity: 1 }) };
     const history = new FakeHistory();
     const actions = new ActionQueue();
     const deps: AnalysisQueueDeps = { settings: () => moderation, history, actions, ai, autoStart: false, minIntervalMs: 0 };

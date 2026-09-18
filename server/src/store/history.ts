@@ -4,6 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import { DATA_DIR } from '../paths';
 import { banRegistry } from './banRegistry';
+import { sanctionLog } from './sanctionLog';
 import crypto from 'crypto';
 
 const DATA_FILE = path.join(DATA_DIR, 'users.json');
@@ -178,5 +179,5 @@ export class HistoryStore {
 export const historyStore = new HistoryStore();
 
 // Make sure a debounced write isn't lost on Ctrl+C / normal exit.
-process.on('SIGINT', () => { historyStore.flush(); banRegistry.flush(); process.exit(0); });
+process.on('SIGINT', () => { historyStore.flush(); banRegistry.flush(); sanctionLog.flush(); process.exit(0); });
 process.on('beforeExit', () => historyStore.flush());

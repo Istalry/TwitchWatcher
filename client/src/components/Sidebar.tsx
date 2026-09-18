@@ -1,7 +1,7 @@
-import { Bug, Users, Zap, Settings as SettingsIcon, type LucideIcon } from 'lucide-react';
+import { Bug, History, Users, Zap, Settings as SettingsIcon, type LucideIcon } from 'lucide-react';
 import { NetworkQRCode } from './NetworkQRCode';
 
-export type TabId = 'moderation' | 'users' | 'debug' | 'settings';
+export type TabId = 'moderation' | 'users' | 'log' | 'debug' | 'settings';
 
 interface SidebarProps {
     activeTab: TabId;
@@ -12,6 +12,7 @@ interface SidebarProps {
 const tabs: { id: TabId; label: string; icon: LucideIcon }[] = [
     { id: 'moderation', label: 'Moderation', icon: Zap },
     { id: 'users', label: 'Live Users', icon: Users },
+    { id: 'log', label: 'Log', icon: History },
     { id: 'debug', label: 'Debug', icon: Bug },
     { id: 'settings', label: 'Settings', icon: SettingsIcon },
 ];
