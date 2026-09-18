@@ -60,7 +60,7 @@ export interface PendingAction {
     flaggedReason: string;
     category: ModerationCategory;
     severity: number;
-    suggestedAction: 'timeout' | 'ban';
+    suggestedAction: 'none' | 'timeout' | 'ban'; // 'none' = review only (e.g. a link that is merely flagged)
     timestamp: number;
     status: 'pending' | 'approved' | 'discarded';
 }

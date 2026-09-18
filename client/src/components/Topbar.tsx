@@ -1,15 +1,19 @@
-import { AlertTriangle, Power } from 'lucide-react';
-import { PLATFORMS, type SystemStatus } from '../types';
+import { AlertTriangle, Download, Power, X } from 'lucide-react';
+import { PLATFORMS, type SystemStatus, type UpdateInfo } from '../types';
 import { PLATFORM_META } from '../platformMeta';
 
 interface TopbarProps {
     onShutdown: () => void;
     status: SystemStatus;
+    /** Newer release to advertise; the parent hides it once dismissed. */
+    update?: UpdateInfo | null;
+    onDismissUpdate?: () => void;
 }
 
-export function Topbar({ onShutdown, status }: TopbarProps) {
+export function Topbar({ onShutdown, status, update = null, onDismissUpdate }: TopbarProps) {
     const { ai, platforms } = status;
     const enabled = PLATFORMS.filter(p => platforms[p]?.enabled);
+    const showUpdate = !!update;
 
     // Online but the last analysis failed → amber, with the error as tooltip.
     const aiState: 'ok' | 'warn' | 'off' = !ai.online ? 'off' : ai.lastError || ai.floodActive ? 'warn' : 'ok';
@@ -93,10 +97,24 @@ export function Topbar({ onShutdown, status }: TopbarProps) {
                 </div>
             </header>
 
-            {ai.floodActive && (
-                <div className="fixed top-16 right-0 left-0 md:left-64 z-20 bg-amber-500/10 border-b border-amber-500/20 text-amber-300 text-xs font-bold px-8 py-2 flex items-center gap-2">
-                    <AlertTriangle size={14} />
-                    The AI is flagging {ai.flagRate !== null ? Math.round(ai.flagRate * 100) : '50+'}% of chat — the threshold was raised temporarily. Consider a lower sensitivity or a different model in Settings.
+            {(ai.floodActive || showUpdate) && (
+                <div className="fixed top-16 right-0 left-0 md:left-64 z-20 flex flex-col">
+                    {ai.floodActive && (
+                        <div className="bg-amber-500/10 border-b border-amber-500/20 text-amber-300 text-xs font-bold px-8 py-2 flex items-center gap-2">
+                            <AlertTriangle size={14} />
+                            The AI is flagging {ai.flagRate !== null ? Math.round(ai.flagRate * 100) : '50+'}% of chat — the threshold was raised temporarily. Consider a lower sensitivity or a different model in Settings.
+                        </div>
+                    )}
+                    {showUpdate && update && (
+                        <div role="status" className="bg-emerald-500/10 border-b border-emerald-500/20 text-emerald-300 text-xs font-bold px-8 py-2 flex items-center gap-3">
+                            <Download size={14} />
+                            <span>Update available: v{update.latestVersion}. Your settings and history are kept when you replace the exe.</span>
+                            <a href={update.url} target="_blank" rel="noreferrer" className="underline hover:text-white">Download</a>
+                            <button onClick={onDismissUpdate} aria-label="Dismiss update notice" className="ml-auto text-emerald-300/70 hover:text-white">
+                                <X size={14} />
+                            </button>
+                        </div>
+                    )}
                 </div>
             )}
         </>

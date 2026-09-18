@@ -6,12 +6,14 @@ import { Settings } from './components/Settings';
 import { SetupPage } from './components/SetupPage';
 import { ModerationView } from './components/ModerationView';
 import { useChatStream } from './hooks/useChatStream';
-import { EMPTY_STATUS, PLATFORMS, type ActionEvent, type PendingAction, type ChatUser, type Platform, type SystemStatus } from './types';
+import { EMPTY_STATUS, PLATFORMS, type ActionEvent, type PendingAction, type ChatUser, type Platform, type SystemInfo, type SystemStatus } from './types';
 import { PLATFORM_META } from './platformMeta';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Bug } from 'lucide-react';
 import { Power } from 'lucide-react';
 import './styles/neo.css';
+
+const DISMISSED_UPDATE_KEY = 'tw.dismissedUpdate';
 
 function App() {
   const [isSetupComplete, setIsSetupComplete] = useState<boolean | null>(null); // null = loading
@@ -20,6 +22,14 @@ function App() {
   const [users, setUsers] = useState<ChatUser[]>([]);
   const [isShuttingDown, setIsShuttingDown] = useState(false);
   const [systemStatus, setSystemStatus] = useState<SystemStatus>(EMPTY_STATUS);
+  const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
+  const [dismissedUpdate, setDismissedUpdate] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem(DISMISSED_UPDATE_KEY);
+    } catch {
+      return null;
+    }
+  });
 
   // Debug State
   const [debugUser, setDebugUser] = useState('TrollUser');
@@ -38,6 +48,15 @@ function App() {
       })
       .catch(() => setIsSetupComplete(false)); // Assume false if fail
   }, []);
+
+  // Version, data folder and update availability: cheap, refreshed occasionally (the update check itself runs server-side).
+  useEffect(() => {
+    if (isSetupComplete !== true) return;
+    const load = () => fetch('/api/system/info').then(res => res.json()).then(setSystemInfo).catch(() => {});
+    load();
+    const timer = setInterval(load, 5 * 60 * 1000);
+    return () => clearInterval(timer);
+  }, [isSetupComplete]);
 
   // Action-queue changes arrive over the SSE stream, so the queue never waits for a poll.
   const handleActionEvent = useCallback((evt: ActionEvent) => {
@@ -181,17 +200,30 @@ function App() {
     );
   }
 
+  const update = systemInfo?.update && systemInfo.update.latestVersion !== dismissedUpdate ? systemInfo.update : null;
+  const dismissUpdate = () => {
+    if (!update) return;
+    setDismissedUpdate(update.latestVersion);
+    try {
+      localStorage.setItem(DISMISSED_UPDATE_KEY, update.latestVersion);
+    } catch {
+      // private mode: the banner simply comes back on the next load
+    }
+  };
+  const bannerCount = (systemStatus.ai.floodActive ? 1 : 0) + (update ? 1 : 0);
+  const mainPadding = bannerCount === 0 ? 'pt-24' : bannerCount === 1 ? 'pt-32' : 'pt-40';
+
   const inputClass = "w-full bg-zinc-800 border-2 border-transparent rounded-xl p-5 text-white font-bold focus:border-zinc-600 focus:outline-none transition-all placeholder:text-zinc-600 shadow-inner";
 
   return (
     <div className="min-h-screen w-full bg-[#09090b] text-white font-inter flex relative overflow-hidden">
-      <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
+      <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} version={systemInfo?.version} />
       <MobileNav activeTab={activeTab} setActiveTab={setActiveTab} />
 
       <div className="flex-1 flex flex-col md:ml-64 relative">
-        <Topbar onShutdown={handleShutdown} status={systemStatus} />
+        <Topbar onShutdown={handleShutdown} status={systemStatus} update={update} onDismissUpdate={dismissUpdate} />
 
-        <main className={`flex-1 p-4 md:p-8 pb-24 md:pb-8 overflow-y-auto custom-scrollbar relative z-0 ${systemStatus.ai.floodActive ? 'pt-32' : 'pt-24'}`}>
+        <main className={`flex-1 p-4 md:p-8 pb-24 md:pb-8 overflow-y-auto custom-scrollbar relative z-0 ${mainPadding}`}>
           <AnimatePresence mode="wait">
             {activeTab === 'moderation' && (
               <motion.div
@@ -234,7 +266,7 @@ function App() {
                 exit={{ opacity: 0, scale: 0.98 }}
                 transition={{ duration: 0.2 }}
               >
-                <Settings status={systemStatus} onSaved={fetchData} />
+                <Settings status={systemStatus} info={systemInfo} onSaved={fetchData} />
               </motion.div>
             )}
 

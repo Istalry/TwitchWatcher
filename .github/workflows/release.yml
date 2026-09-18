@@ -1,0 +1,140 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build, smoke test and publish
+    runs-on: windows-latest
+    env:
+      VERSION: ${{ github.ref_name }}
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            client/package-lock.json
+            server/package-lock.json
+
+      - name: Check that the tag matches server/package.json
+        run: |
+          $pkgVersion = (Get-Content server/package.json | ConvertFrom-Json).version
+          $tagVersion = $env:VERSION.TrimStart('v')
+          if ($pkgVersion -ne $tagVersion) {
+            Write-Error "Tag $env:VERSION does not match server/package.json version $pkgVersion. Run 'npm run release' to cut a release."
+            exit 1
+          }
+          "APP_VERSION=$tagVersion" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      # --- Client ---------------------------------------------------------
+      - name: Client — install
+        working-directory: client
+        run: npm ci
+      - name: Client — lint, test, build
+        working-directory: client
+        run: |
+          npm run lint
+          npx vitest run
+          npm run build
+      - name: Deploy client into server/public
+        run: |
+          if (Test-Path server/public) { Remove-Item -Recurse -Force server/public }
+          Copy-Item -Recurse client/dist server/public
+
+      # --- Server ---------------------------------------------------------
+      - name: Server — install
+        working-directory: server
+        run: npm ci
+      - name: Server — test and bundle
+        working-directory: server
+        run: |
+          npm test
+          npm run build
+
+      - name: Cache the pkg Node binary
+        uses: actions/cache@v4
+        with:
+          path: ~/.pkg-cache
+          key: pkg-node22-win-x64-${{ hashFiles('server/package-lock.json') }}
+          restore-keys: pkg-node22-win-x64-
+
+      - name: Server — package exe and inject icon
+        working-directory: server
+        run: |
+          npm run package
+          npm run icon
+          Get-Item dist/TwitchWatcher.exe | Format-List Name, Length
+
+      # --- Smoke test -----------------------------------------------------
+      - name: Smoke test the executable
+        working-directory: server/dist
+        run: |
+          $env:NO_BROWSER = '1'
+          $env:NO_UPDATE_CHECK = '1'
+          $proc = Start-Process -FilePath (Resolve-Path ./TwitchWatcher.exe) -PassThru -RedirectStandardOutput smoke.log -RedirectStandardError smoke.err
+          $ready = $false
+          for ($i = 0; $i -lt 30; $i++) {
+            Start-Sleep -Seconds 1
+            try {
+              $status = Invoke-RestMethod -Uri http://localhost:3000/api/setup/status -TimeoutSec 2
+              $ready = $true
+              break
+            } catch {}
+          }
+          if (-not $ready) {
+            Get-Content smoke.log, smoke.err -ErrorAction SilentlyContinue
+            Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+            Write-Error 'The exe did not answer on :3000 within 30 s'
+            exit 1
+          }
+          $info = Invoke-RestMethod -Uri http://localhost:3000/api/system/info -TimeoutSec 5
+          Write-Host "Running version $($info.version), data dir $($info.dataDir), setup complete: $($status.isSetupComplete)"
+          if ($info.version -ne $env:APP_VERSION) {
+            Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+            Write-Error "Exe reports version $($info.version), expected $env:APP_VERSION"
+            exit 1
+          }
+          Invoke-RestMethod -Method Post -Uri http://localhost:3000/api/shutdown -TimeoutSec 5 | Out-Null
+          if (-not $proc.WaitForExit(10000)) {
+            Stop-Process -Id $proc.Id -Force
+            Write-Error 'The exe did not exit after /api/shutdown'
+            exit 1
+          }
+          Get-Content smoke.log
+
+      # --- Package --------------------------------------------------------
+      - name: Create the release archive
+        run: |
+          $name = "TwitchWatcher-$env:VERSION-win-x64"
+          New-Item -ItemType Directory -Path $name | Out-Null
+          Copy-Item server/dist/TwitchWatcher.exe, README.md, LICENSE, CHANGELOG.md $name
+          Compress-Archive -Path "$name/*" -DestinationPath "$name.zip"
+          $hash = (Get-FileHash "$name.zip" -Algorithm SHA256).Hash.ToLower()
+          "$hash  $name.zip" | Out-File -Encoding ascii SHA256SUMS.txt
+          Get-Content SHA256SUMS.txt
+
+      - name: Extract release notes from CHANGELOG.md
+        run: |
+          node scripts/changelog-section.mjs $env:APP_VERSION > RELEASE_NOTES.md
+          Get-Content RELEASE_NOTES.md
+
+      - name: Publish the GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          body_path: RELEASE_NOTES.md
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          files: |
+            TwitchWatcher-${{ github.ref_name }}-win-x64.zip
+            SHA256SUMS.txt

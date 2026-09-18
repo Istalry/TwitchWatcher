@@ -1,16 +1,23 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Save, Trash2, Globe, ChevronDown, Radio, Shield } from 'lucide-react';
+import { Save, Trash2, Globe, ChevronDown, Radio, Shield, FolderOpen } from 'lucide-react';
 import {
     DEFAULT_PLATFORM_SETTINGS, EMPTY_STATUS, MODERATION_CATEGORIES,
-    type AppSettings, type ModerationCategory, type Sensitivity, type SystemStatus,
+    type AppSettings, type LinkPolicy, type ModerationCategory, type Sensitivity, type SystemInfo, type SystemStatus,
 } from '../types';
 import { SecureInput } from './SecureInput';
 import { TwitchCard, YouTubeCard, TikTokCard } from './platforms/PlatformCards';
 
 interface Props {
     status?: SystemStatus;
+    info?: SystemInfo | null;
     onSaved?: () => void;
 }
+
+const LINK_OPTIONS: { id: LinkPolicy; label: string; hint: string }[] = [
+    { id: 'allow', label: 'Allow', hint: 'Links are ignored; only scam bait is judged by the AI.' },
+    { id: 'flag', label: 'Flag', hint: 'Any link outside the allowlist becomes a card to review.' },
+    { id: 'block', label: 'Block', hint: 'Same, with a timeout pre-selected on the card.' },
+];
 
 const SENSITIVITY_OPTIONS: { id: Sensitivity; label: string; hint: string }[] = [
     { id: 'lenient', label: 'Lenient', hint: 'Only clear-cut violations reach the queue (severity 4+).' },
@@ -29,19 +36,28 @@ const CATEGORY_LABELS: Record<ModerationCategory, string> = {
 
 const ALWAYS_ON: ModerationCategory[] = ['hate', 'threat'];
 
-export function Settings({ status = EMPTY_STATUS, onSaved }: Props) {
+const parseAllowlist = (text: string): string[] => Array.from(new Set(
+    text.split(/[\n,;\s]+/).map(d => d.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0]).filter(Boolean),
+));
+
+export function Settings({ status = EMPTY_STATUS, info = null, onSaved }: Props) {
     const [settings, setSettings] = useState<AppSettings>({
+        schemaVersion: 2,
         isSetupComplete: true,
+        checkForUpdates: true,
         aiLanguage: 'English',
         defaultTimeoutDuration: 600,
         moderation: {
             sensitivity: 'balanced',
             categories: { hate: true, harassment: true, threat: true, spam: true, vulgarity: true, other: true },
             skipTrustedRoles: true,
+            links: 'allow',
+            linkAllowlist: [],
         },
         platforms: DEFAULT_PLATFORM_SETTINGS,
         ai: { provider: 'ollama', model: 'gemma3:4b' }
     });
+    const [allowlistText, setAllowlistText] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
 
@@ -73,6 +89,7 @@ export function Settings({ status = EMPTY_STATUS, onSaved }: Props) {
             const res = await fetch('/api/settings');
             const data: AppSettings = await res.json();
             setSettings(data);
+            setAllowlistText((data.moderation?.linkAllowlist ?? []).join('\n'));
 
             // Auto-fetch models if using Google
             if (data.ai?.provider === 'google' && data.ai?.apiKey) {
@@ -95,7 +112,10 @@ export function Settings({ status = EMPTY_STATUS, onSaved }: Props) {
             const res = await fetch('/api/settings', {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(settings)
+                body: JSON.stringify({
+                    ...settings,
+                    moderation: { ...settings.moderation, linkAllowlist: parseAllowlist(allowlistText) },
+                }),
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || 'Save failed');
@@ -213,6 +233,43 @@ export function Settings({ status = EMPTY_STATUS, onSaved }: Props) {
                     </label>
 
                     <div>
+                        <label className={labelClass}>Links</label>
+                        <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label="Links">
+                            {LINK_OPTIONS.map(opt => {
+                                const active = (settings.moderation.links ?? 'allow') === opt.id;
+                                return (
+                                    <button
+                                        key={opt.id}
+                                        role="radio"
+                                        aria-checked={active}
+                                        onClick={() => updateModeration({ links: opt.id })}
+                                        className={`p-3 rounded-xl border text-left transition-all ${active ? 'bg-blue-500/10 border-blue-500 text-white' : 'bg-zinc-800 border-transparent text-zinc-400 hover:bg-zinc-700'}`}
+                                    >
+                                        <div className="font-bold text-sm">{opt.label}</div>
+                                        <div className="text-[11px] text-zinc-500 mt-1 leading-snug">{opt.hint}</div>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                        {settings.moderation.links !== 'allow' && (
+                            <div className="mt-3">
+                                <label className={labelClass} htmlFor="link-allowlist">Allowed domains (one per line)</label>
+                                <textarea
+                                    id="link-allowlist"
+                                    className={`${inputClass} font-mono text-sm min-h-24`}
+                                    placeholder={'youtube.com\ntwitch.tv\ndiscord.gg'}
+                                    value={allowlistText}
+                                    onChange={e => setAllowlistText(e.target.value)}
+                                    onBlur={() => updateModeration({ linkAllowlist: parseAllowlist(allowlistText) })}
+                                />
+                                <p className="text-[11px] text-zinc-500 mt-2">
+                                    Subdomains are covered (<code>twitch.tv</code> also allows <code>clips.twitch.tv</code>). Plain links are caught instantly without the AI; disguised ones ("bit(dot)ly") are left to the AI.
+                                </p>
+                            </div>
+                        )}
+                    </div>
+
+                    <div>
                         <label className={labelClass}>Default Timeout (Seconds)</label>
                         <input
                             type="number"
@@ -327,6 +384,36 @@ export function Settings({ status = EMPTY_STATUS, onSaved }: Props) {
                         status={status.platforms.tiktok}
                         onChange={tiktok => setSettings(prev => ({ ...prev, platforms: { ...prev.platforms, tiktok } }))}
                     />
+                </div>
+            </div>
+
+            <Divider />
+
+            {/* General */}
+            <div>
+                <SectionTitle icon={<FolderOpen className="text-zinc-400" size={32} />}>General</SectionTitle>
+
+                <div className="mt-8 ml-20 space-y-6">
+                    <label className="flex items-center gap-3 text-sm font-bold text-zinc-300 cursor-pointer">
+                        <input
+                            type="checkbox"
+                            className="accent-blue-500"
+                            checked={settings.checkForUpdates !== false}
+                            onChange={e => setSettings({ ...settings, checkForUpdates: e.target.checked })}
+                        />
+                        Check GitHub for new releases (once a day, a banner appears when one is available)
+                    </label>
+
+                    <div>
+                        <label className={labelClass}>Data folder</label>
+                        <div className="bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 font-mono text-xs text-zinc-400 break-all" data-testid="data-dir">
+                            {info?.dataDir ?? '…'}
+                        </div>
+                        <p className="text-[11px] text-zinc-500 mt-2">
+                            Holds <code>settings.json</code> (encrypted), <code>users.json</code> and <code>bans.json</code>. It survives updates: just replace the exe.
+                            {info?.version ? ` Running v${info.version}.` : ''}
+                        </p>
+                    </div>
                 </div>
             </div>
 

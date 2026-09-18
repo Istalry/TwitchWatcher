@@ -2,6 +2,7 @@ import axios from 'axios';
 import crypto from 'crypto';
 import { settingsStore } from '../store/settings';
 import { historyStore } from '../store/history';
+import { banRegistry } from '../store/banRegistry';
 import { userKey } from '../store/types';
 import { googleAuth } from '../services/googleAuth';
 import { chatHub } from '../services/chatHub';
@@ -46,8 +47,6 @@ export class YouTubePlatform implements ChatPlatform {
     private lastError: string | undefined;
     private retryTimer: NodeJS.Timeout | null = null;
     private connecting = false;
-    // Data API ban ids by user, needed to lift a ban we issued (only known for this session).
-    private banIds = new Map<string, string>();
 
     private async loadModule(): Promise<YouTubeModule> {
         return import('youtubei.js');
@@ -241,7 +240,7 @@ export class YouTubePlatform implements ChatPlatform {
                 { snippet: { liveChatId, type, ...(banDurationSeconds ? { banDurationSeconds } : {}), bannedUserDetails: { channelId: userId } } },
                 { params: { part: 'snippet' }, headers: await this.apiHeaders() }
             );
-            if (res.data?.id) this.banIds.set(userId, res.data.id);
+            if (res.data?.id) banRegistry.setYouTubeBanId(userId, res.data.id);
         } catch (err: any) {
             throw new Error(err.response?.data?.error?.message || err.message);
         }
@@ -260,14 +259,14 @@ export class YouTubePlatform implements ChatPlatform {
     }
 
     public async unban(userId: string) {
-        const banId = this.banIds.get(userId);
-        if (!banId) throw new Error('Only bans issued during this session can be lifted from here; use YouTube Studio.');
+        const banId = banRegistry.getYouTubeBanId(userId);
+        if (!banId) throw new Error('This ban was not issued from TwitchWatcher, so its id is unknown; lift it in YouTube Studio.');
         try {
             await axios.delete(`${DATA_API}/liveChatBans`, { params: { id: banId }, headers: await this.apiHeaders() });
         } catch (err: any) {
             throw new Error(err.response?.data?.error?.message || err.message);
         }
-        this.banIds.delete(userId);
+        banRegistry.clearYouTubeBan(userId);
         historyStore.updateUserStatus(userKey('youtube', userId), 'active');
         console.log(`[youtube] Unbanned ${userId}`);
     }

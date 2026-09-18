@@ -38,10 +38,15 @@ Unlike traditional bots that ban instantly, TwitchWatcher **queues suspicious me
 ![Easy Setup](resources/easySetup.png)
 Use this if you just want to run the app without touching code.
 
-1.  **Download** the release zip file: [TwitchWatcher.zip](https://github.com/Istalry/TwitchWatcher/releases/tag/Release).
+1.  **Download** the latest `TwitchWatcher-vX.Y.Z-win-x64.zip` from the [Releases page](https://github.com/Istalry/TwitchWatcher/releases/latest).
 2.  **Extract All** contents to a folder.
 3.  **Run** `TwitchWatcher.exe`.
 4.  **Configure**: the setup wizard opens in your browser. Pick the platforms you want (or skip and add them later in **Settings**), then choose your AI engine.
+
+### Updating
+Download the new zip and replace `TwitchWatcher.exe` — that's it. Your settings, user history and bans live in `%APPDATA%\TwitchWatcher`, not next to the exe, so they survive updates, moves and re-downloads. The dashboard shows a banner when a newer release is available (Settings → General to turn the check off).
+
+> Coming from a version that kept `settings.json` next to the exe? The first launch moves it to `%APPDATA%\TwitchWatcher` automatically. Prefer a self-contained folder (USB stick)? Create an empty `portable.txt` next to the exe and the files stay there.
 
 ### Option 2: Developer Setup (From Source)
 Use this if you want to modify the code.
@@ -90,7 +95,8 @@ Just your TikTok username. The app connects whenever that account is LIVE. Optio
 We take security seriously. Here is how your data is handled:
 
 *   **Encrypted Storage**: Your sensitive credentials (API Keys, Client Secrets, OAuth tokens) are **encrypted** using **AES-256-GCM** before being written to disk. The decryption key is generated dynamically based on your specific machine, meaning the config file cannot be read if copied to another computer.
-*   **Local Only**: Settings are stored in `settings.json` next to the executable (or in `server/` when running from source).
+*   **Local Only**: Settings are stored in `settings.json` in `%APPDATA%\TwitchWatcher` (next to the exe with `portable.txt`; in `server/` when running from source). The path is shown in Settings → General.
+*   **Never silently lost**: if the file can't be read (e.g. copied from another machine), it is set aside as `settings.json.unreadable-<date>` instead of being overwritten, and a `settings.json.bak` is kept whenever the format is upgraded.
 *   **Git Ignored**: This settings file is explicitly listed in `.gitignore`.
 *   **Data Privacy**: Chat logs and user history are also stored in local JSON files. No data is sent to us.
 
@@ -113,6 +119,7 @@ Everyone who has chatted, across platforms. Click a user to see their history an
 ### Settings → Moderation
 *   **Sensitivity**: *Lenient* / *Balanced* / *Strict* sets the severity a flag needs to become a card. Anything below becomes a note on the user instead. Explicit slurs and threats always reach the queue.
 *   **Categories**: opt out of e.g. vulgarity or spam. Hate speech and threats are always on.
+*   **Links**: *Allow* (default), *Flag* (any link outside your allowlist becomes a card, instantly and without the AI) or *Block* (same, with Timeout pre-selected). Add your own domains to the allowlist (`youtube.com`, `clips.twitch.tv`, …). Disguised links like `bit(dot)ly` are left to the AI, which is told to treat them as spam.
 *   If the AI starts flagging more than half of chat, a **flood breaker** temporarily raises the threshold and shows a banner — a hint to lower the sensitivity or switch model.
 
 ### Mobile Access (QR Code)
@@ -131,3 +138,4 @@ Want to use your iPad or Phone as a moderation deck?
 *   **"Twitch Auth Failed"**: Double-check your Client ID and Secret, and ensure the Redirect URL in Twitch Console matches `http://localhost:3000/auth/twitch/callback`.
 *   **"YouTube: Channel is not live"**: The app only attaches to an active live stream; it retries every minute. You can also paste a specific video ID in the YouTube settings.
 *   **"TikTok: Not live"**: TikTok can only be watched while that account is streaming; the app retries every minute.
+*   **"The wizard came back after an update"**: the app couldn't read your `settings.json`. Look for `settings.json.unreadable-*` in `%APPDATA%\TwitchWatcher` — it is your old file, untouched.

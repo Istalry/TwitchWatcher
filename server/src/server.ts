@@ -8,6 +8,7 @@ import axios from 'axios';
 import open from 'open';
 
 import { historyStore } from './store/history';
+import { banRegistry } from './store/banRegistry';
 import { actionQueue, ActionEvent } from './store/actionQueue';
 import { settingsStore, AppSettings, PlatformSettingsMap } from './store/settings';
 import { ChatMessage, PLATFORMS, Platform, userKey } from './store/types';
@@ -17,6 +18,9 @@ import { aiService } from './services/ai/aiService';
 import { analysisQueue } from './services/analysisQueue';
 import { chatHub } from './services/chatHub';
 import { platformRegistry, isPlatform } from './platforms/registry';
+import { updateChecker } from './services/updateCheck';
+import { APP_VERSION } from './version';
+import { DATA_DIR } from './paths';
 
 const app = express();
 app.use(cors());
@@ -26,6 +30,13 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, '../public')));
 
 const errorMessage = (err: unknown) => (err instanceof Error ? err.message : String(err));
+
+/** Lowercases, trims, strips schemes/paths and de-duplicates a list of domains. */
+const normalizeAllowlist = (list: unknown[]): string[] => Array.from(new Set(
+    list
+        .map(v => String(v).trim().toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0])
+        .filter(Boolean),
+));
 
 /** First enabled platform that still needs an OAuth round-trip, if any. */
 function nextAuthUrl(): string | null {
@@ -296,6 +307,7 @@ app.post('/api/shutdown', (req, res) => {
     res.json({ message: 'Server shutting down...' });
     setTimeout(async () => {
         historyStore.flush();
+        banRegistry.flush();
         await platformRegistry.disconnectAll();
         process.exit(0);
     }, 1000);
@@ -357,6 +369,10 @@ app.post('/api/debug/flag', (req, res) => {
 
 // --- SYSTEM ---
 
+app.get('/api/system/info', (req, res) => {
+    res.json({ version: APP_VERSION, dataDir: DATA_DIR, update: updateChecker.available() });
+});
+
 app.get('/api/system/network', (req, res) => {
     const nets = os.networkInterfaces();
     let localIp = 'localhost';
@@ -406,18 +422,22 @@ app.get('/api/settings', (req, res) => {
 });
 
 app.put('/api/settings', async (req, res) => {
-    const { aiLanguage, defaultTimeoutDuration, moderation, platforms, ai } = req.body as Partial<AppSettings>;
+    const { aiLanguage, defaultTimeoutDuration, checkForUpdates, moderation, platforms, ai } = req.body as Partial<AppSettings>;
     const before = settingsStore.get().platforms;
 
     settingsStore.update(current => {
         const next = { ...current };
         if (aiLanguage) next.aiLanguage = aiLanguage;
         if (defaultTimeoutDuration) next.defaultTimeoutDuration = Number(defaultTimeoutDuration);
+        if (typeof checkForUpdates === 'boolean') next.checkForUpdates = checkForUpdates;
         if (moderation) {
             next.moderation = {
                 ...next.moderation,
                 ...moderation,
                 categories: { ...next.moderation.categories, ...(moderation.categories || {}) },
+                linkAllowlist: Array.isArray(moderation.linkAllowlist)
+                    ? normalizeAllowlist(moderation.linkAllowlist)
+                    : next.moderation.linkAllowlist,
             };
         }
         if (platforms) {
@@ -475,7 +495,8 @@ const start = async () => {
         // Start Server first so Setup/Auth routes work
         app.listen(PORT, async () => {
             const url = `http://localhost:${PORT}`;
-            console.log(`Server running on ${url}`);
+            console.log(`TwitchWatcher v${APP_VERSION} running on ${url} (data: ${DATA_DIR})`);
+            updateChecker.start();
 
             // Auto-open browser (set NO_BROWSER=1 to skip, e.g. when a dev client is already open)
             if (!process.env.NO_BROWSER && !process.argv.includes('--no-browser')) {

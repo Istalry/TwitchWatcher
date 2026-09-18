@@ -3,7 +3,7 @@ echo ==========================================
 echo      TwitchWatcher Build System
 echo ==========================================
 
-echo [1/4] Building Client...
+echo [1/5] Building Client...
 cd client
 call npm run build
 if %errorlevel% neq 0 (
@@ -13,7 +13,7 @@ if %errorlevel% neq 0 (
 )
 cd ..
 
-echo [2/4] Deploying Client to Server...
+echo [2/5] Deploying Client to Server...
 if exist "server\public" rmdir /s /q "server\public"
 mkdir "server\public"
 xcopy /E /I /Y "client\dist" "server\public"
@@ -23,7 +23,7 @@ if %errorlevel% neq 0 (
     exit /b %errorlevel%
 )
 
-echo [3/4] Bundling Server (typecheck + esbuild)...
+echo [3/5] Bundling Server (typecheck + esbuild)...
 cd server
 call npm run build
 if %errorlevel% neq 0 (
@@ -32,7 +32,7 @@ if %errorlevel% neq 0 (
     exit /b %errorlevel%
 )
 
-echo [4/4] Generating Executable (pkg, Node 20)...
+echo [4/5] Generating Executable (pkg, Node 22)...
 call npm run package
 if %errorlevel% neq 0 (
     echo Packaging failed!
@@ -40,12 +40,17 @@ if %errorlevel% neq 0 (
     exit /b %errorlevel%
 )
 
-REM echo [Post-Build] Injecting Application Icon...
-REM call npx ts-node src/scripts/add_icon.ts
+echo [5/5] Injecting Application Icon...
+call npm run icon
+if %errorlevel% neq 0 (
+    echo Icon injection failed!
+    pause
+    exit /b %errorlevel%
+)
 
 echo ==========================================
 echo        BUILD SUCCESSFUL
 echo ==========================================
 echo Executable located in: server\dist\TwitchWatcher.exe
-echo settings.json / users.json are created next to the exe on first run.
+echo Data files live in %%APPDATA%%\TwitchWatcher (or next to the exe when portable.txt exists).
 pause

@@ -6,6 +6,7 @@ export type TabId = 'moderation' | 'users' | 'debug' | 'settings';
 interface SidebarProps {
     activeTab: TabId;
     setActiveTab: (tab: TabId) => void;
+    version?: string;
 }
 
 const tabs: { id: TabId; label: string; icon: LucideIcon }[] = [
@@ -37,7 +38,7 @@ export function MobileNav({ activeTab, setActiveTab }: SidebarProps) {
     );
 }
 
-export function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
+export function Sidebar({ activeTab, setActiveTab, version }: SidebarProps) {
 
     return (
         <aside className="w-64 bg-[#18181b] border-r border-[#27272a] flex flex-col h-full fixed left-0 top-0 pt-24 z-10 hidden md:flex">
@@ -63,8 +64,8 @@ export function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
 
             <NetworkQRCode />
 
-            <div className="p-4 text-xs text-zinc-600 font-mono text-center mb-4">
-                v2.0.0-beta
+            <div className="p-4 text-xs text-zinc-600 font-mono text-center mb-4" data-testid="app-version">
+                {version ? `v${version}` : '…'}
             </div>
         </aside>
     );

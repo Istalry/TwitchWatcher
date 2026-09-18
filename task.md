@@ -26,27 +26,29 @@ Done items are kept as a record of what exists; unchecked items are the roadmap.
 - [x] Client tests (vitest + Testing Library): ActionCard, Sidebar, UserList, LiveChat, ModerationView, NetworkQRCode
 - [x] Docs: `CLAUDE.md`, README, `project_overview.md`, `code_structure.md`
 
-## Release pipeline (tags + CI)
-- [ ] **Versioning**: single source of truth in `server/package.json` (`version`), mirrored in `client/package.json`; the Sidebar reads it from a build-time define (`__APP_VERSION__`) instead of the hard-coded `v2.0.0-beta`
-- [ ] **Tag scheme**: semver tags `vX.Y.Z` (pre-releases `vX.Y.Z-beta.N`); retire the floating `Release` tag and point the README download link to `releases/latest`
-- [ ] **Release script**: `npm run release -- <patch|minor|major>` bumps both `package.json`, updates `CHANGELOG.md`, commits `chore(release): vX.Y.Z` and creates the annotated tag (no push)
-- [ ] **CHANGELOG.md**: Keep a Changelog format, one section per tag
-- [ ] **CI workflow** (`.github/workflows/ci.yml`, on push/PR): `npm ci` in client + server, client `lint` + `vitest run` + `build`, server `typecheck` + `build` (esbuild bundle)
-- [ ] **Release workflow** (`.github/workflows/release.yml`, on `v*` tag push, `windows-latest`): run the CI steps, then the `build_exe.bat` equivalent (client build → `server/public` → bundle → `pkg node22-win-x64` → `add_icon`), zip `TwitchWatcher.exe` + `README.md` + `LICENSE` as `TwitchWatcher-vX.Y.Z-win-x64.zip`
-- [ ] **GitHub Release**: workflow creates the release from the tag (`softprops/action-gh-release`), body = matching CHANGELOG section, attaches the zip + SHA-256 checksum, marks `-beta` tags as pre-release
-- [ ] **Cache & speed**: cache `~/.pkg-cache` (Node 22 binary) and npm caches so a release build stays under ~5 min
-- [ ] **Smoke test in CI**: launch the built exe with `NO_BROWSER=1`, poll `GET /api/setup/status` for a `200`, then `POST /api/shutdown`
-- [ ] **Docs**: README "Easy Install" points to the latest release; `CLAUDE.md` gains a "Releasing" paragraph (bump → tag → push tag → CI publishes)
+## Release pipeline (tags + CI) (done)
+- [x] **Versioning**: `server/package.json` is the single source (`src/version.ts`, inlined by esbuild); root `package.json` mirrors it; the Sidebar shows the version from `/api/system/info`
+- [x] **Tag scheme**: semver tags `vX.Y.Z` (pre-releases `vX.Y.Z-beta.N`); README points to `releases/latest`
+- [x] **Release script**: `npm run release -- <patch|minor|major|x.y.z>` bumps, rolls `CHANGELOG.md`, commits and tags (never pushes)
+- [x] **CHANGELOG.md** in Keep a Changelog format
+- [x] **CI workflow** (`.github/workflows/ci.yml`): client lint + tests + build, server tests + bundle
+- [x] **Release workflow** (`.github/workflows/release.yml`, on `v*` tags, `windows-latest`): build → pkg → icon → smoke test of the exe → zip + SHA-256 → GitHub Release with the changelog section (`-beta` = pre-release)
+- [x] **Cache**: npm + `~/.pkg-cache`
+- [x] **Docs**: README "Updating" section, `CLAUDE.md` "Releasing"
+- [ ] Manual, once `v2.0.0` is published: delete the old floating `Release` tag/release on GitHub
 
-## Link blocking
-- [ ] **Setting** `moderation.links: 'allow' | 'flag' | 'block'` (default `allow`) + `linkAllowlist: string[]` (domains, e.g. `youtube.com`, `clips.twitch.tv`) in Settings → Moderation; trusted roles (`skipTrustedRoles`) are exempt
-- [ ] **Deterministic pass (regex, before the AI)**: detect real URLs (`https?://`, `www.`, `domain.tld/…`, IPv4:port) and normalize (lowercase, strip tracking params); if the domain is not allowlisted → queue a card directly (`category: 'spam'`, severity 3, reason "Link: <domain>") without an AI call; `block` mode pre-selects `timeout` as the suggested action. Only the matching messages are attached to the card
-- [ ] **Obfuscated links go to the AI**: strings that look like a link deliberately broken to evade filters — `bit(dot)ly/x`, `discord . gg / abc`, `y o u t u b e . c o m`, `example[.]com`, `hxxp://`, missing scheme with a spaced TLD — are not caught by the regex; add a prompt clause under `spam`: "a link that has been deliberately broken up or disguised to evade filters (dots replaced by '(dot)', spaces inserted, brackets around the '.') is spam, severity 3, even if the destination looks harmless" with two positive examples and one negative ("this is v1 . 2 of the app" is a version number, not a link)
-- [ ] **UI**: Settings → Moderation section with the mode selector and an editable allowlist; the card shows the detected domain as a chip
-- [ ] **Tests**: server unit tests for the URL detector (positives, obfuscated negatives, allowlist, `v1.2` / `1.5x` / `e.g.` false positives); client test for the settings section
+## Update-safe data (done)
+- [x] Data files in `%APPDATA%\TwitchWatcher` (packaged); files next to the exe are moved there on first launch; `portable.txt` keeps the old behaviour
+- [x] Unreadable `settings.json` is set aside (`.unreadable-<stamp>`) instead of overwritten; `schemaVersion` + `settings.json.bak` on migration
+- [x] Update check against GitHub Releases (daily, opt-out in Settings → General) with a Topbar banner; data folder shown in Settings
+
+## Link blocking (done)
+- [x] Setting `moderation.links: allow | flag | block` + `linkAllowlist` (parent domains cover subdomains); trusted roles exempt
+- [x] Deterministic pass (`services/linkDetector.ts`, explicit TLD list, IPv4) before the AI → card `Link: <domain>` (spam, sev 3), no AI call; `block` pre-selects Timeout on the card
+- [x] Obfuscated links (`bit(dot)ly`, `discord . gg`) → prompt clause under spam, with a version-number counter-example
+- [x] Settings UI (mode + allowlist), server + client tests
 
 ## Known limitations / ideas
-- [ ] YouTube `unban` only works for bans issued in the current session (needs the ban id) — persist `banIds` or look them up via `liveChatBans`
-- [ ] Server has no automated tests (stores/services have import side effects) — add a test entry point that avoids the `analysisQueue` interval and file I/O
+- [ ] Server tests cover only pure modules; the pipeline (`analysisQueue`, stores) still has import side effects that make it hard to test
 - [ ] Small models (`gemma3:4b`) over-weight repetition and the literal word "hate" — evaluate a prompt/few-shot set per model, or a larger default model
 - [ ] Update README screenshots (`resources/*.png`) to the v2 Moderation tab

@@ -19,6 +19,9 @@ export function ActionCard({ actions, capabilities = FULL_CAPABILITIES, onResolv
     const actionIds = actions.map(a => a.id);
     const canModerate = capabilities.ban || capabilities.timeout;
     const maxSeverity = Math.max(...actions.map(a => a.severity ?? 0));
+    // Highlight the strongest suggestion across the coalesced actions (none < timeout < ban).
+    const suggested = actions.some(a => a.suggestedAction === 'ban') ? 'ban'
+        : actions.some(a => a.suggestedAction === 'timeout') ? 'timeout' : 'none';
 
     // Aggregate reasons (a coalesced action carries several, joined with " | ")
     const distinctReasons = Array.from(new Set(actions.flatMap(a => a.flaggedReason.split(' | '))));
@@ -100,7 +103,8 @@ export function ActionCard({ actions, capabilities = FULL_CAPABILITIES, onResolv
                     {capabilities.timeout && (
                         <button
                             onClick={() => onResolve(actionIds, 'approved', '')}
-                            className="flex-1 px-4 py-3 rounded-xl bg-orange-500/10 hover:bg-orange-500/20 text-orange-500 font-bold text-sm transition-all border border-orange-500/20 hover:border-orange-500/50"
+                            title={suggested === 'timeout' ? 'Suggested action' : undefined}
+                            className={`flex-1 px-4 py-3 rounded-xl bg-orange-500/10 hover:bg-orange-500/20 text-orange-500 font-bold text-sm transition-all border hover:border-orange-500/50 ${suggested === 'timeout' ? 'border-orange-500/60 ring-1 ring-orange-500/40' : 'border-orange-500/20'}`}
                         >
                             Timeout
                         </button>
@@ -109,7 +113,8 @@ export function ActionCard({ actions, capabilities = FULL_CAPABILITIES, onResolv
                     {capabilities.ban && (
                         <button
                             onClick={() => onResolve(actionIds, 'approved', 'permanent')}
-                            className="flex-1 px-4 py-3 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-500 font-bold text-sm transition-all border border-red-500/20 hover:border-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.1)] hover:shadow-[0_0_20px_rgba(239,68,68,0.2)]"
+                            title={suggested === 'ban' ? 'Suggested action' : undefined}
+                            className={`flex-1 px-4 py-3 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-500 font-bold text-sm transition-all border hover:border-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.1)] hover:shadow-[0_0_20px_rgba(239,68,68,0.2)] ${suggested === 'ban' ? 'border-red-500/60 ring-1 ring-red-500/40' : 'border-red-500/20'}`}
                         >
                             BAN USER
                         </button>

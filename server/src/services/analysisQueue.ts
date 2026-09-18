@@ -4,6 +4,7 @@ import { settingsStore, Sensitivity } from '../store/settings';
 import { PendingAction, Platform, userKey } from '../store/types';
 import { IncomingMessage } from '../platforms/types';
 import { aiService, Verdict } from './ai/aiService';
+import { disallowedLinks } from './linkDetector';
 import crypto from 'crypto';
 
 const MIN_SEVERITY: Record<Sensitivity, number> = { lenient: 4, balanced: 3, strict: 2 };
@@ -42,6 +43,36 @@ export interface AnalysisStats {
     effectiveMinSeverity: number;
 }
 
+interface ActionInput {
+    key: string;
+    entry: Pick<QueuedUser, 'platform' | 'userId' | 'username' | 'displayName'>;
+    text: string;
+    messageIds: string[];
+    reason: string;
+    category: PendingAction['category'];
+    severity: number;
+    suggestedAction: PendingAction['suggestedAction'];
+}
+
+function buildAction(input: ActionInput): PendingAction {
+    return {
+        id: crypto.randomUUID(),
+        platform: input.entry.platform,
+        userId: input.entry.userId,
+        userKey: input.key,
+        username: input.entry.username,
+        displayName: input.entry.displayName,
+        messageContent: input.text,
+        messageIds: input.messageIds,
+        flaggedReason: input.reason,
+        category: input.category,
+        severity: input.severity,
+        suggestedAction: input.suggestedAction,
+        timestamp: Date.now(),
+        status: 'pending',
+    };
+}
+
 class AnalysisQueue {
     private queue: Map<string, QueuedUser> = new Map();
     private queueOrder: string[] = []; // Maintain order of users
@@ -64,6 +95,28 @@ class AnalysisQueue {
         }
 
         const key = userKey(msg.platform, msg.userId);
+
+        // Deterministic link policy: a plain URL never needs the AI.
+        const { links, linkAllowlist } = settingsStore.get().moderation;
+        if (links !== 'allow') {
+            const hits = disallowedLinks(msg.content, linkAllowlist);
+            if (hits.length > 0) {
+                const domains = hits.map(h => h.domain).join(', ');
+                console.log(`LINK [${msg.displayName}@${msg.platform}] ${domains}: ${msg.content}`);
+                actionQueue.addOrAppend(buildAction({
+                    key,
+                    entry: { platform: msg.platform, userId: msg.userId, username: msg.username, displayName: msg.displayName },
+                    text: msg.content,
+                    messageIds: [storedMessageId],
+                    reason: `Link: ${domains}`,
+                    category: 'spam',
+                    severity: 3,
+                    suggestedAction: links === 'block' ? 'timeout' : 'none',
+                }));
+                return;
+            }
+        }
+
         const entry = this.queue.get(key);
         if (entry) {
             // User already in queue, append message
@@ -194,23 +247,16 @@ class AnalysisQueue {
         const flaggedReason = !hardFloor && !aboveThreshold && escalated ? `Repeated: ${reason}` : reason;
         console.log(`FLAGGED [${entry.displayName}@${entry.platform}] sev ${verdict.severity} ${verdict.category}: ${text} (${flaggedReason})`);
 
-        const action: PendingAction = {
-            id: crypto.randomUUID(),
-            platform: entry.platform,
-            userId: entry.userId,
-            userKey: key,
-            username: entry.username,
-            displayName: entry.displayName,
-            messageContent: text,
+        actionQueue.addOrAppend(buildAction({
+            key,
+            entry,
+            text,
             messageIds,
-            flaggedReason,
+            reason: flaggedReason,
             category: verdict.category,
             severity: verdict.severity,
             suggestedAction: verdict.suggestedAction === 'ban' ? 'ban' : 'timeout',
-            timestamp: Date.now(),
-            status: 'pending',
-        };
-        actionQueue.addOrAppend(action);
+        }));
     }
 }
 

@@ -19,7 +19,8 @@ const SENSITIVITY_PREAMBLE: Record<'lenient' | 'balanced' | 'strict', string> = 
 export const buildModerationPrompt = (message: string, history: string[] = [], platform?: Platform): string => {
     const settings = settingsStore.get();
     const language = settings.aiLanguage;
-    const { sensitivity, categories } = settings.moderation;
+    const { sensitivity, categories, links } = settings.moderation;
+    const moderateLinks = links !== 'allow' && categories.spam !== false;
 
     const enabledCategories = MODERATION_CATEGORIES.filter(c => categories[c] !== false);
     const categoryList = enabledCategories.map(c => `- "${c}": ${CATEGORY_DESCRIPTIONS[c]}`).join('\n');
@@ -43,13 +44,13 @@ These ARE violations and must be flagged:
 - scam or phishing bait ("free v-bucks at bit.ly/…", "click here to claim") → spam, severity 3
 - slurs, dehumanizing statements about a group → hate, severity 4-5
 - threats of violence, sharing someone's address/phone → threat, severity 5
-
+${moderateLinks ? '- a link deliberately broken up or disguised to evade filters ("bit(dot)ly/x", "discord . gg / abc", "y o u t u b e . c o m", "example[.]com", "hxxp://") → spam, severity 3, even if the destination looks harmless\n' : ''}
 These are NOT violations and must be answered with "flagged": false:
 - greetings, small talk, questions (including personal ones like "where are you from" or "do you have a wife"), jokes, opinions, disagreement
 - talking about other viewers, saying someone blocked them, complaining, drama between viewers without insults
 - emojis, single letters, dots, repeated characters, song requests, non-English chatter you cannot read
 - the words "hate"/"kill"/"die" used casually (e.g. "I hate Mondays", "this beat kills")
-Only treat a series of fragments as abuse if the fragments, joined together, clearly spell a slur or explicit insult.
+${moderateLinks ? '- version numbers, prices or abbreviations that merely contain dots ("v1 . 2", "1.5x", "e.g.")\n' : ''}Only treat a series of fragments as abuse if the fragments, joined together, clearly spell a slur or explicit insult.
 Never flag a message only because the user posts a lot or repeats themselves; repetition never raises the severity of a harmless message.
 The word "hate" by itself is not hate speech ("Hate from Ireland" is a pun on "hi from"): "hate" requires an actual slur or dehumanizing statement about a group.
 

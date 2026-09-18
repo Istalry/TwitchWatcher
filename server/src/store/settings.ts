@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { DATA_DIR } from '../paths';
+import { DATA_DIR, moveFile } from '../paths';
 import crypto from 'crypto';
 import os from 'os';
 import { ModerationCategory, Platform } from './types';
@@ -9,6 +9,10 @@ const SETTINGS_FILE = path.join(DATA_DIR, 'settings.json');
 const ALGORITHM = 'aes-256-gcm';
 
 export type Sensitivity = 'lenient' | 'balanced' | 'strict';
+export type LinkPolicy = 'allow' | 'flag' | 'block';
+
+/** Bump when the on-disk shape changes in a way `migrate()` has to handle. */
+export const SETTINGS_SCHEMA_VERSION = 2;
 
 export interface TwitchSettings {
     enabled: boolean;
@@ -47,11 +51,16 @@ export interface ModerationSettings {
     sensitivity: Sensitivity;
     categories: Record<ModerationCategory, boolean>;
     skipTrustedRoles: boolean; // don't analyze broadcaster / platform moderators
+    links: LinkPolicy; // allow: ignore links; flag: queue a card; block: queue with timeout pre-selected
+    linkAllowlist: string[]; // domains that never get flagged (parent domains match subdomains)
 }
 
 export interface AppSettings {
+    schemaVersion: number;
+
     // General
     isSetupComplete: boolean;
+    checkForUpdates: boolean; // ask GitHub Releases for a newer version
 
     // Preferences
     aiLanguage: string;
@@ -69,14 +78,18 @@ export interface AppSettings {
     };
 }
 
-const DEFAULT_SETTINGS: AppSettings = {
+export const DEFAULT_SETTINGS: AppSettings = {
+    schemaVersion: SETTINGS_SCHEMA_VERSION,
     isSetupComplete: false,
+    checkForUpdates: true,
     aiLanguage: 'English',
     defaultTimeoutDuration: 600,
     moderation: {
         sensitivity: 'balanced',
         categories: { hate: true, harassment: true, threat: true, spam: true, vulgarity: true, other: true },
         skipTrustedRoles: true,
+        links: 'allow',
+        linkAllowlist: [],
     },
     platforms: {
         twitch: { enabled: false, username: '', channel: '', clientId: '', clientSecret: '' },
@@ -98,7 +111,7 @@ interface EncryptedData {
 const isObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 
 /** Recursively fills missing keys from `defaults`; values in `value` win. */
-function withDefaults<T>(defaults: T, value: unknown): T {
+export function withDefaults<T>(defaults: T, value: unknown): T {
     if (!isObject(defaults) || !isObject(value)) return (value === undefined ? defaults : value) as T;
     const out: Record<string, unknown> = { ...(defaults as Record<string, unknown>) };
     for (const [k, v] of Object.entries(value)) {
@@ -107,19 +120,47 @@ function withDefaults<T>(defaults: T, value: unknown): T {
     return out as T;
 }
 
-/** Upgrades a settings object from the single-platform (Twitch-only) layout. */
-function migrate(parsed: Record<string, unknown>): Record<string, unknown> {
-    if (isObject(parsed.twitch) && !parsed.platforms) {
-        const twitch = parsed.twitch as Partial<TwitchSettings>;
-        const { twitch: _drop, ...rest } = parsed;
-        return {
+/**
+ * Upgrades a settings object written by an older version to the current schema.
+ * Returns the (possibly new) object and whether anything changed.
+ */
+export function migrate(parsed: Record<string, unknown>): { settings: Record<string, unknown>; changed: boolean } {
+    let out = parsed;
+    let changed = false;
+    const version = typeof parsed.schemaVersion === 'number' ? parsed.schemaVersion : 1;
+
+    // v1 -> v2: single-platform layout `{ twitch: {...} }` becomes `platforms.twitch`.
+    if (version < 2 && isObject(out.twitch) && !out.platforms) {
+        const twitch = out.twitch as Partial<TwitchSettings>;
+        const { twitch: _drop, ...rest } = out;
+        out = {
             ...rest,
             platforms: {
                 twitch: { ...twitch, enabled: !!twitch.username && !!twitch.channel },
             },
         };
+        changed = true;
     }
-    return parsed;
+
+    if (version < SETTINGS_SCHEMA_VERSION) {
+        out = { ...out, schemaVersion: SETTINGS_SCHEMA_VERSION };
+        changed = true;
+    }
+    return { settings: out, changed };
+}
+
+/** Moves an unreadable settings file aside so a fresh setup never destroys it. */
+function setAside(file: string, why: string): string | null {
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const target = `${file}.unreadable-${stamp}`;
+    try {
+        moveFile(file, target);
+        console.error(`[Settings] ${why}. The file was kept as ${target}; starting with default settings.`);
+        return target;
+    } catch (err) {
+        console.error(`[Settings] ${why}, and the file could not be moved aside:`, err);
+        return null;
+    }
 }
 
 export class SettingsStore {
@@ -192,34 +233,48 @@ export class SettingsStore {
     }
 
     private load(): AppSettings {
-        if (fs.existsSync(SETTINGS_FILE)) {
-            try {
-                const raw = fs.readFileSync(SETTINGS_FILE, 'utf-8');
-                const parsed = JSON.parse(raw);
+        if (!fs.existsSync(SETTINGS_FILE)) return JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
 
-                // Check if file is encrypted (has encryption fields)
-                if (parsed.iv && parsed.content && parsed.authTag) {
-                    try {
-                        const decryptedJson = this.decrypt(parsed as EncryptedData);
-                        return withDefaults(DEFAULT_SETTINGS, migrate(JSON.parse(decryptedJson)));
-                    } catch (e) {
-                        console.error('Failed to decrypt settings.json. Machine signature mismatch?');
-                        // Return default, forcing re-setup if key implies different machine
-                        return { ...DEFAULT_SETTINGS };
-                    }
-                } else {
-                    // Migration: Handle plain JSON if it exists from previous version
-                    // We will save it encrypted immediately after loading
-                    const migrated = withDefaults(DEFAULT_SETTINGS, migrate(parsed));
-                    this.settings = migrated; // Set temporarily so save works
-                    this.save();
-                    return migrated;
-                }
-            } catch (e) {
-                console.error('Failed to load settings.json', e);
-            }
+        let parsed: any;
+        try {
+            parsed = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf-8'));
+        } catch {
+            setAside(SETTINGS_FILE, 'settings.json is not valid JSON');
+            return JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
         }
-        return JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
+
+        let plain: Record<string, unknown>;
+        let wasEncrypted = false;
+        if (parsed && parsed.iv && parsed.content && parsed.authTag) {
+            try {
+                plain = JSON.parse(this.decrypt(parsed as EncryptedData));
+                wasEncrypted = true;
+            } catch {
+                setAside(SETTINGS_FILE, 'Failed to decrypt settings.json (machine signature mismatch?)');
+                return JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
+            }
+        } else if (isObject(parsed)) {
+            plain = parsed; // plain JSON written by a very old version
+        } else {
+            setAside(SETTINGS_FILE, 'settings.json has an unexpected shape');
+            return JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
+        }
+
+        const { settings: migrated, changed } = migrate(plain);
+        const result = withDefaults(DEFAULT_SETTINGS, migrated);
+
+        if (changed || !wasEncrypted) {
+            // Keep a copy of the pre-migration file, then persist the upgraded (encrypted) shape.
+            try {
+                fs.copyFileSync(SETTINGS_FILE, `${SETTINGS_FILE}.bak`);
+            } catch (err) {
+                console.warn('[Settings] Could not write settings.json.bak:', err);
+            }
+            this.settings = result;
+            this.save();
+            console.log(`[Settings] Migrated settings.json to schema v${SETTINGS_SCHEMA_VERSION} (backup: settings.json.bak)`);
+        }
+        return result;
     }
 
     private save() {

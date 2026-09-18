@@ -1,70 +1,48 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-const EXE_PATH = path.resolve(__dirname, '../../dist/twitch-automod-server.exe');
+/**
+ * Puts the app logo on the Windows executable.
+ *
+ * Run BEFORE `npm run package`: pkg appends its payload to a cached Node binary and patching the
+ * finished exe with resedit breaks that payload ("pkg/prelude/bootstrap.js:1 SyntaxError"). So the
+ * icon is injected into the cached base binary instead (downloaded by pkg-fetch when missing);
+ * every exe pkg builds from it afterwards carries the icon. Idempotent.
+ */
 const PNG_PATH = path.resolve(__dirname, '../../../client/public/logo.png');
-const ICO_PATH = path.resolve(__dirname, '../../dist/icon.ico');
-
-console.log('--- Debug Paths ---');
-console.log('CWD:', process.cwd());
-console.log('__dirname:', __dirname);
-console.log('EXE_PATH:', EXE_PATH);
-console.log('PNG_PATH:', PNG_PATH);
-console.log('ICO_PATH:', ICO_PATH);
+const TARGET = { nodeRange: 'node22', platform: 'win', arch: 'x64' }; // keep in sync with package.json "pkg.targets"
 
 async function main() {
-    // Both packages are ESM-only; load them at runtime.
+    // ESM-only packages; load them at runtime.
     const ResEdit = await import('resedit');
     const { default: pngToIco } = await import('png-to-ico');
-    console.log('--- Icon Injection Start ---');
+    const { need } = await import('@yao-pkg/pkg-fetch');
 
-    // 1. Convert PNG to ICO
+    console.log(`Fetching/locating the pkg base binary for ${TARGET.nodeRange}-${TARGET.platform}-${TARGET.arch}...`);
+    const exePath = await need(TARGET);
+    console.log('Base binary:', exePath);
+
     console.log(`Converting ${PNG_PATH} to ICO...`);
-    try {
-        const icoBuffer = await pngToIco(PNG_PATH);
-        fs.writeFileSync(ICO_PATH, icoBuffer);
-        console.log('ICO created at:', ICO_PATH);
-    } catch (e) {
-        console.error('Failed to convert PNG to ICO:', e);
-        process.exit(1);
-    }
+    const icoBuffer = await pngToIco(PNG_PATH);
 
-    // 2. Read EXE
-    if (!fs.existsSync(EXE_PATH)) {
-        console.error('Executable not found at:', EXE_PATH);
-        process.exit(1);
-    }
-    const data = fs.readFileSync(EXE_PATH);
-
-    // 3. Load into ResEdit
-    console.log('Loading executable resources...');
-    const exe = ResEdit.NtExecutable.from(data);
+    const exe = ResEdit.NtExecutable.from(fs.readFileSync(exePath));
     const res = ResEdit.NtExecutableResource.from(exe);
+    const iconFile = ResEdit.Data.IconFile.from(icoBuffer);
 
-    // 4. Create Icon Resource
-    console.log('Injecting icon...');
-    const iconFile = ResEdit.Data.IconFile.from(fs.readFileSync(ICO_PATH));
-
-    // Replace existing icon group (101 is usually the main icon ID)
+    // Node's main icon group is id 1, en-US.
     ResEdit.Resource.IconGroupEntry.replaceIconsForResource(
         res.entries,
-        1, // Icon Group ID (often 1 or 101)
-        1033, // Language (en-US)
+        1,
+        1033,
         iconFile.icons.map(item => item.data)
     );
 
-    // 5. Rebuild EXE
-    console.log('Rebuilding executable...');
     res.outputResource(exe);
-    const newExe = exe.generate();
-
-    // 6. Save
-    fs.writeFileSync(EXE_PATH, Buffer.from(newExe));
-    console.log('Icon injected successfully!');
-
-    // Cleanup
-    fs.unlinkSync(ICO_PATH);
-    console.log('--- Icon Injection Complete ---');
+    fs.writeFileSync(exePath, Buffer.from(exe.generate()));
+    console.log('Icon injected into the base binary. Run `npm run package` to build the exe.');
 }
 
-main().catch(console.error);
+main().catch(err => {
+    console.error(err);
+    process.exit(1);
+});

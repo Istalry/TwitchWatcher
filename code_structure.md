@@ -18,16 +18,21 @@ src/
 │   └── tiktok.ts        # tiktok-live-connector, read-only
 ├── services/
 │   ├── chatHub.ts       # Single entry point for messages → history, analysis, SSE fan-out
-│   ├── analysisQueue.ts # Batching, rate limit, routing of AI verdicts (queue vs. note)
+│   ├── analysisQueue.ts # Link policy, batching, rate limit, routing of AI verdicts (queue vs. note)
+│   ├── linkDetector.ts  # Pure URL detection + allowlist (no AI)
+│   ├── updateCheck.ts   # GitHub Releases check (daily)
 │   ├── authService.ts   # Twitch OAuth
 │   ├── googleAuth.ts    # Google OAuth (YouTube Data API)
 │   └── ai/              # AIService (fail-open + lastError), providers, promptBuilder
 ├── store/          # In-memory state, some persisted to JSON
 │   ├── actionQueue.ts   # Pending moderation actions (EventEmitter)
 │   ├── history.ts       # Chat users, messages and AI notes (users.json)
-│   ├── settings.ts      # Encrypted app configuration (settings.json)
+│   ├── banRegistry.ts   # Platform ban ids so bans can be lifted after a restart (bans.json)
+│   ├── settings.ts      # Encrypted app configuration + schema migrations (settings.json)
 │   └── types.ts         # Shared domain types
-├── paths.ts        # Where settings.json / users.json live (exe dir or server root)
+├── test/           # vitest unit tests for the pure modules above
+├── paths.ts        # DATA_DIR (%APPDATA%\TwitchWatcher, exe dir with portable.txt, or server root) + legacy file migration
+├── version.ts      # APP_VERSION from package.json, compareVersions()
 └── server.ts       # Express application & API routes (incl. SSE stream)
 ```
 
@@ -57,7 +62,7 @@ src/
 - **Async/Await**: Use async/await over promises for cleaner readable code.
 
 ### State Management
-- **Server**: Uses in-memory Singletons (exported instances) for state. The action queue is lost on restart by design; users/notes and settings are persisted.
+- **Server**: Uses in-memory Singletons (exported instances) for state. The action queue is lost on restart by design; users/notes, settings and ban ids are persisted in `DATA_DIR`. Data must survive updates: never overwrite a file you cannot read, and add a `migrate()` step when the settings shape changes.
 - **Client**: Uses React `useState` and `useEffect`.
     - **Push**: chat messages and action-queue changes arrive over Server-Sent Events (`/api/chat/stream`).
     - **Polling**: users and system status are polled every 2 seconds.
@@ -79,6 +84,10 @@ src/
 3.  Client: add it to `types.ts`, `platformMeta.ts`, and a config card in `components/platforms/PlatformCards.tsx`; wire the card into `SetupPage` and `Settings`.
 
 ### Adding Features
-1.  **Backend First**: Implement the logic in `server/src/store`, `services` or `platforms`.
+1.  **Backend First**: Implement the logic in `server/src/store`, `services` or `platforms`. Pure logic goes in its own module with a test in `server/src/test/`.
 2.  **Expose API**: Add a route in `server/src/server.ts`.
 3.  **Frontend**: Create a component in `client/src/components` and hook it up in `App.tsx`.
+4.  **Changelog**: add a line under `[Unreleased]` in `CHANGELOG.md`.
+
+### Releasing
+`npm run release -- <patch|minor|major>` at the root, then `git push origin main --follow-tags`; GitHub Actions builds, smoke-tests and publishes the exe. See `CLAUDE.md` → Releasing.

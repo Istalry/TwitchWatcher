@@ -1,4 +1,3 @@
-server/package-lock.json
 
 # Logs
 logs
@@ -27,13 +26,15 @@ dist-ssr
 server/users.json
 server/tokens.json
 server/settings.json
+server/settings.json.bak
+server/settings.json.unreadable-*
+server/bans.json
 
 # Build Artifacts
 server/dist
 server/public
 client/dist
 *.exe
-server/settings.json
 
 [bB]uild/
 TwitchWatcher-PersonnalBuild/

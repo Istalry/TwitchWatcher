@@ -50,7 +50,7 @@ export interface PendingAction {
     flaggedReason: string;
     category: ModerationCategory;
     severity: number;
-    suggestedAction: 'timeout' | 'ban';
+    suggestedAction: 'none' | 'timeout' | 'ban';
     timestamp: number;
     status: 'pending' | 'approved' | 'discarded';
 }
@@ -122,14 +122,20 @@ export interface PlatformSettingsMap {
     tiktok: TikTokSettings;
 }
 
+export type LinkPolicy = 'allow' | 'flag' | 'block';
+
 export interface ModerationSettings {
     sensitivity: Sensitivity;
     categories: Record<ModerationCategory, boolean>;
     skipTrustedRoles: boolean;
+    links: LinkPolicy;
+    linkAllowlist: string[];
 }
 
 export interface AppSettings {
+    schemaVersion: number;
     isSetupComplete: boolean;
+    checkForUpdates: boolean;
     aiLanguage: string;
     defaultTimeoutDuration: number;
     moderation: ModerationSettings;
@@ -139,6 +145,17 @@ export interface AppSettings {
         model: string;
         apiKey?: string;
     };
+}
+
+export interface UpdateInfo {
+    latestVersion: string;
+    url: string;
+}
+
+export interface SystemInfo {
+    version: string;
+    dataDir: string;
+    update: UpdateInfo | null;
 }
 
 export const EMPTY_STATUS: SystemStatus = {

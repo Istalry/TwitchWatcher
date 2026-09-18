@@ -1,13 +1,11 @@
 {
   "name": "twitchwatcher",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "version": "2.0.0",
+  "description": "Local, human-in-the-loop AI moderation dashboard for Twitch, YouTube and TikTok chats",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "release": "node scripts/release.mjs"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs"
+  "license": "MIT",
+  "type": "commonjs",
+  "private": true
 }
