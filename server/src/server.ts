@@ -381,6 +381,7 @@ app.post('/api/debug/flag', (req, res) => {
         category: 'other',
         severity: 3,
         suggestedAction: 'timeout',
+        source: 'ai',
         timestamp: Date.now(),
         status: 'pending',
     });

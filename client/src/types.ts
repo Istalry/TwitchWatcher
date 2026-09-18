@@ -38,6 +38,8 @@ export interface ChatUser {
     status: 'active' | 'timed_out' | 'banned';
 }
 
+export type ActionSource = 'ai' | 'link' | 'rule';
+
 export interface PendingAction {
     id: string;
     platform: Platform;
@@ -51,7 +53,10 @@ export interface PendingAction {
     category: ModerationCategory;
     severity: number;
     suggestedAction: 'none' | 'timeout' | 'ban';
-    deleteMessages?: boolean; // link policy: approving also deletes the message(s)
+    source: ActionSource;
+    ruleName?: string; // when source === 'rule'
+    deleteMessages?: boolean; // link/rule policy: approving also deletes the message(s)
+    autoExecuteAt?: number; // auto mode: executes itself at this time unless held or dismissed
     timestamp: number;
     status: 'pending' | 'approved' | 'discarded';
 }

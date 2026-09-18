@@ -48,6 +48,8 @@ export interface ModerationResult {
     severity?: number; // 1-5
 }
 
+export type ActionSource = 'ai' | 'link' | 'rule';
+
 export interface PendingAction {
     id: string; // uuid
     platform: Platform;
@@ -61,8 +63,13 @@ export interface PendingAction {
     category: ModerationCategory;
     severity: number;
     suggestedAction: 'none' | 'timeout' | 'ban';
-    /** Link policy cards: approving also deletes the offending message(s) where the platform allows it. */
+    /** What produced the card. */
+    source: ActionSource;
+    ruleName?: string; // when source === 'rule'
+    /** Link/rule cards: approving also deletes the offending message(s) where the platform allows it. */
     deleteMessages?: boolean;
+    /** Auto mode: the card executes itself at this time unless held or dismissed. */
+    autoExecuteAt?: number;
     timestamp: number;
     status: 'pending' | 'approved' | 'discarded';
 }

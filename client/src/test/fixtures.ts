@@ -33,6 +33,7 @@ export const makeAction = (over: Partial<PendingAction> = {}): PendingAction => 
     category: 'hate',
     severity: 4,
     suggestedAction: 'ban',
+    source: 'ai',
     timestamp: Date.now(),
     status: 'pending',
     ...over,
