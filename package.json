@@ -1,6 +1,6 @@
 {
   "name": "twitchwatcher",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Local, human-in-the-loop AI moderation dashboard for Twitch, YouTube and TikTok chats",
   "scripts": {
     "release": "node scripts/release.mjs"

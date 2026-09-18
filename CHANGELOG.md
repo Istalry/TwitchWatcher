@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-09-18
+
 ### Changed
 - Link policy is now *Allow* / *Suppress* (delete message + timeout) / *Ban* (delete message + ban). The card explains what approval does; nothing happens until the streamer confirms. Existing *Flag* / *Block* settings become *Suppress*.
 
@@ -50,5 +52,6 @@ All notable changes to this project are documented here. The format follows
 - The false-positive learning loop; Dismiss now only clears the card.
 - The `.env` configuration path.
 
-[Unreleased]: https://github.com/Istalry/TwitchWatcher/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/Istalry/TwitchWatcher/compare/v2.1.0...HEAD
+[2.1.0]: https://github.com/Istalry/TwitchWatcher/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/Istalry/TwitchWatcher/releases/tag/v2.0.0
