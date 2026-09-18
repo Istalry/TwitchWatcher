@@ -6,6 +6,7 @@ import {
 } from '../types';
 import { SecureInput } from './SecureInput';
 import { TwitchCard, YouTubeCard, TikTokCard } from './platforms/PlatformCards';
+import { RulesEditor } from './RulesEditor';
 
 interface Props {
     status?: SystemStatus;
@@ -47,12 +48,17 @@ export function Settings({ status = EMPTY_STATUS, info = null, onSaved }: Props)
         checkForUpdates: true,
         aiLanguage: 'English',
         defaultTimeoutDuration: 600,
+        retentionDays: 90,
         moderation: {
             sensitivity: 'balanced',
             categories: { hate: true, harassment: true, threat: true, spam: true, vulgarity: true, other: true },
             skipTrustedRoles: true,
             links: 'allow',
             linkAllowlist: [],
+            linksAuto: false,
+            rules: [],
+            autoEnabled: false,
+            autoGraceSeconds: 10,
         },
         platforms: DEFAULT_PLATFORM_SETTINGS,
         ai: { provider: 'ollama', model: 'gemma3:4b' }
@@ -265,6 +271,58 @@ export function Settings({ status = EMPTY_STATUS, info = null, onSaved }: Props)
                                 <p className="text-[11px] text-zinc-500 mt-2">
                                     Links to these domains are always allowed; subdomains are covered (<code>twitch.tv</code> also allows <code>clips.twitch.tv</code>). Any other link creates a card instantly, without the AI, and nothing is deleted or sanctioned until you approve it. Disguised links ("bit(dot)ly") are left to the AI.
                                 </p>
+                                {settings.moderation.autoEnabled && (
+                                    <label className="flex items-center gap-3 text-sm font-bold text-amber-300 cursor-pointer mt-3">
+                                        <input
+                                            type="checkbox"
+                                            className="accent-amber-500"
+                                            checked={settings.moderation.linksAuto === true}
+                                            onChange={e => updateModeration({ linksAuto: e.target.checked })}
+                                        />
+                                        Execute link cards automatically after the grace period
+                                    </label>
+                                )}
+                            </div>
+                        )}
+                    </div>
+
+                    <div>
+                        <label className={labelClass}>Rules</label>
+                        <p className="text-[11px] text-zinc-500 mb-3">
+                            Deterministic checks that run before the AI, in this order. A hit creates a card instantly; you still confirm it unless auto mode is on for that rule.
+                        </p>
+                        <RulesEditor
+                            rules={settings.moderation.rules ?? []}
+                            autoEnabled={settings.moderation.autoEnabled === true}
+                            onChange={rules => updateModeration({ rules })}
+                        />
+                    </div>
+
+                    <div className={`rounded-2xl border p-4 ${settings.moderation.autoEnabled ? 'border-amber-500/40 bg-amber-500/5' : 'border-zinc-800 bg-zinc-900/40'}`}>
+                        <label className="flex items-center gap-3 text-sm font-bold text-zinc-200 cursor-pointer">
+                            <input
+                                type="checkbox"
+                                className="accent-amber-500"
+                                checked={settings.moderation.autoEnabled === true}
+                                onChange={e => updateModeration({ autoEnabled: e.target.checked })}
+                            />
+                            Auto mode — let rules and the link policy execute on their own
+                        </label>
+                        <p className="text-[11px] text-zinc-500 mt-2 ml-7">
+                            Only for rules and links you mark as automatic; AI verdicts always wait for you. Each card shows a countdown during which you can <b>Hold</b> or <b>Dismiss</b> it, then the sanction runs and lands in the Log (undoable).
+                        </p>
+                        {settings.moderation.autoEnabled && (
+                            <div className="mt-3 ml-7 flex items-center gap-3">
+                                <label className={labelClass} htmlFor="auto-grace" style={{ marginBottom: 0 }}>Grace period (seconds)</label>
+                                <input
+                                    id="auto-grace"
+                                    type="number"
+                                    min={3}
+                                    max={120}
+                                    className={`${inputClass} w-28`}
+                                    value={settings.moderation.autoGraceSeconds ?? 10}
+                                    onChange={e => updateModeration({ autoGraceSeconds: Math.min(120, Math.max(3, parseInt(e.target.value) || 10)) })}
+                                />
                             </div>
                         )}
                     </div>

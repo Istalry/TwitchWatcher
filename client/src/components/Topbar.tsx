@@ -1,4 +1,4 @@
-import { AlertTriangle, Download, Power, X } from 'lucide-react';
+import { AlertTriangle, Download, Power, X, Zap } from 'lucide-react';
 import { PLATFORMS, type SystemStatus, type UpdateInfo } from '../types';
 import { PLATFORM_META } from '../platformMeta';
 
@@ -83,6 +83,17 @@ export function Topbar({ onShutdown, status, update = null, onDismissUpdate }: T
                             </div>
                         );
                     })}
+
+                    {status.auto?.enabled && (
+                        <div
+                            title="Auto mode: rules and links marked automatic execute after the grace period"
+                            className="flex items-center gap-1.5 px-2 md:px-3 py-1 rounded-full border bg-amber-500/10 border-amber-500/30 text-amber-300"
+                            data-testid="auto-pill"
+                        >
+                            <Zap size={12} />
+                            <span className="text-[10px] font-black uppercase tracking-wider">Auto{status.auto.scheduled ? ` · ${status.auto.scheduled}` : ''}</span>
+                        </div>
+                    )}
 
                     <div className="h-8 w-[1px] bg-white/10 mx-1 md:mx-2" />
 

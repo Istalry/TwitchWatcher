@@ -11,6 +11,8 @@ import { historyStore } from './store/history';
 import { banRegistry } from './store/banRegistry';
 import { sanctionLog } from './store/sanctionLog';
 import { executeSanction, requestFromAction, revertSanction, unbanUser } from './services/sanctions';
+import { autoExecutor } from './services/autoExecutorInstance';
+import { validateRule } from './services/ruleEngine';
 import { actionQueue, ActionEvent } from './store/actionQueue';
 import { settingsStore, AppSettings, PlatformSettingsMap } from './store/settings';
 import { ChatMessage, PLATFORMS, Platform, userKey } from './store/types';
@@ -105,6 +107,7 @@ app.get('/api/status', async (req, res) => {
         },
         platforms: platformRegistry.statuses(),
         sanctions: { today: sanctionLog.countSince(Date.now() - 24 * 60 * 60 * 1000) },
+        auto: { enabled: settingsStore.get().moderation.autoEnabled, scheduled: autoExecutor.scheduled },
     });
 });
 
@@ -261,6 +264,15 @@ app.post('/api/actions/:id/resolve', async (req, res) => {
         console.error(`Failed to execute ${capability} on ${action.platform}:`, errorMessage(err));
         res.status(500).json({ error: `Failed to execute ${capability}: ${errorMessage(err)}` });
     }
+});
+
+// Hold: cancel a pending auto countdown, keep the card for manual review
+app.post('/api/actions/:id/hold', (req, res) => {
+    const action = actionQueue.get(req.params.id);
+    if (!action) return res.status(404).json({ error: 'Action not found' });
+    if (action.status !== 'pending') return res.status(409).json({ error: 'Action already resolved' });
+    actionQueue.hold(action.id);
+    res.json({ success: true, action });
 });
 
 // --- SANCTION LOG ---
@@ -440,15 +452,37 @@ app.get('/api/settings', (req, res) => {
 });
 
 app.put('/api/settings', async (req, res) => {
-    const { aiLanguage, defaultTimeoutDuration, checkForUpdates, moderation, platforms, ai } = req.body as Partial<AppSettings>;
+    const { aiLanguage, defaultTimeoutDuration, checkForUpdates, retentionDays, moderation, platforms, ai } = req.body as Partial<AppSettings>;
     const before = settingsStore.get().platforms;
+
+    if (moderation?.rules) {
+        for (const rule of moderation.rules) {
+            const problems = validateRule(rule);
+            if (problems.length) return res.status(400).json({ error: `Rule "${rule.name || '?'}": ${problems.join(', ')}` });
+        }
+    }
+    if (moderation?.autoGraceSeconds !== undefined) {
+        moderation.autoGraceSeconds = Math.min(120, Math.max(3, Number(moderation.autoGraceSeconds) || 10));
+    }
 
     settingsStore.update(current => {
         const next = { ...current };
         if (aiLanguage) next.aiLanguage = aiLanguage;
         if (defaultTimeoutDuration) next.defaultTimeoutDuration = Number(defaultTimeoutDuration);
         if (typeof checkForUpdates === 'boolean') next.checkForUpdates = checkForUpdates;
+        if (retentionDays !== undefined) next.retentionDays = Math.max(0, Math.floor(Number(retentionDays) || 0));
         if (moderation) {
+            if (moderation.rules) {
+                moderation.rules = moderation.rules.map(r => ({
+                    ...r,
+                    id: r.id || crypto.randomUUID(),
+                    name: String(r.name || '').trim(),
+                    words: r.words?.map(w => String(w).trim()).filter(Boolean),
+                    enabled: r.enabled !== false,
+                    deleteMessage: r.deleteMessage !== false,
+                    auto: r.auto === true,
+                }));
+            }
             next.moderation = {
                 ...next.moderation,
                 ...moderation,

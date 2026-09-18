@@ -128,6 +128,11 @@ function App() {
     }
   };
 
+  const handleHold = async (ids: string[]) => {
+    await Promise.all(ids.map(id => fetch(`/api/actions/${id}/hold`, { method: 'POST' }).catch(() => undefined)));
+    setActions(prev => prev.map(a => (ids.includes(a.id) ? { ...a, autoExecuteAt: undefined } : a)));
+  };
+
   const handleQuickModerate = async (userKey: string, action: 'ban' | 'timeout') => {
     const user = users.find(u => u.key === userKey);
     const label = user ? `${user.displayName} (${PLATFORM_META[user.platform].label})` : userKey;
@@ -240,6 +245,7 @@ function App() {
                   platforms={systemStatus.platforms}
                   streamConnected={streamConnected}
                   onResolve={handleResolve}
+                  onHold={handleHold}
                   onModerate={handleQuickModerate}
                   onOpenSettings={() => setActiveTab('settings')}
                 />

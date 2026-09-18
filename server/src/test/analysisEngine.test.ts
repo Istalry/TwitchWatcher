@@ -12,6 +12,10 @@ const baseModeration: ModerationSettings = {
     skipTrustedRoles: true,
     links: 'allow',
     linkAllowlist: [],
+    linksAuto: false,
+    rules: [],
+    autoEnabled: false,
+    autoGraceSeconds: 10,
 };
 
 const msg = (over: Partial<IncomingMessage> = {}): IncomingMessage => ({
@@ -126,5 +130,38 @@ describe('AnalysisQueue', () => {
         expect(await q.processNext()).toBe(true);
         expect(actions.getPending()).toEqual([]);
         expect(queue.pendingUsers).toBe(0);
+    });
+
+    it('turns a rule hit into a card without the AI, with a countdown only when auto is armed', () => {
+        const rule = { id: 'r1', name: 'No caps', enabled: true, type: 'caps' as const, category: 'other' as const, action: 'timeout' as const, deleteMessage: false, auto: true };
+        const off = setup({ moderation: { rules: [rule] } });
+        off.queue.add(msg({ content: 'STOP SHOUTING AT EVERYONE' }), 'm1');
+        expect(off.ai.analyzeMessage).not.toHaveBeenCalled();
+        expect(off.actions.getPending()[0]).toMatchObject({ source: 'rule', ruleName: 'No caps', suggestedAction: 'timeout', flaggedReason: 'Rule: No caps (100% caps)' });
+        expect(off.actions.getPending()[0].autoExecuteAt).toBeUndefined();
+        expect(off.actions.getPending()[0].deleteMessages).toBeUndefined();
+
+        const on = setup({ moderation: { rules: [rule], autoEnabled: true, autoGraceSeconds: 5 } });
+        on.queue.add(msg({ content: 'STOP SHOUTING AT EVERYONE' }), 'm1');
+        const at = on.actions.getPending()[0].autoExecuteAt!;
+        expect(at).toBeGreaterThan(Date.now() + 4000);
+        expect(at).toBeLessThanOrEqual(Date.now() + 5000);
+
+        // AI cards never get a countdown, even with the master switch on
+        expect(on.queue.pendingUsers).toBe(0);
+    });
+
+    it('feeds the earlier messages of the user to the repeat rule', () => {
+        const rule = { id: 'r2', name: 'Repeat', enabled: true, type: 'repeat' as const, count: 2, windowSeconds: 60, category: 'spam' as const, action: 'timeout' as const, deleteMessage: true, auto: false };
+        const { queue, history, actions } = setup({ moderation: { rules: [rule] } });
+        history.users.set('twitch:42', {
+            key: 'twitch:42', platform: 'twitch', userId: '42', username: 'troll', displayName: 'Troll', status: 'active', notes: [],
+            messages: [
+                { id: 'old', platform: 'twitch', userKey: 'twitch:42', username: 'troll', displayName: 'Troll', content: 'buy now', timestamp: Date.now() - 1000 },
+                { id: 'm1', platform: 'twitch', userKey: 'twitch:42', username: 'troll', displayName: 'Troll', content: 'buy now', timestamp: Date.now() },
+            ],
+        });
+        queue.add(msg({ content: 'buy now', messageId: 'm1' }), 'm1'); // the current message is already in history
+        expect(actions.getPending()[0]?.flaggedReason).toBe('Rule: Repeat (2× in 60 s)');
     });
 });

@@ -41,12 +41,24 @@ export class ActionQueue extends EventEmitter {
         }
         existing.severity = Math.max(existing.severity, action.severity);
         if (action.deleteMessages) existing.deleteMessages = true;
+        if (action.ruleName && !existing.ruleName) existing.ruleName = action.ruleName;
+        // A card the streamer is already looking at never starts a countdown on its own.
+        // (A held card stays held; a fresh auto hit only appends its message.)
         // Never downgrade the suggestion: none < timeout < ban.
         const rank = { none: 0, timeout: 1, ban: 2 } as const;
         if (rank[action.suggestedAction] > rank[existing.suggestedAction]) existing.suggestedAction = action.suggestedAction;
         existing.timestamp = action.timestamp;
         this.emit('change', { type: 'updated', action: existing } satisfies ActionEvent);
         return existing;
+    }
+
+    /** Cancels a pending countdown; the card stays for manual review. */
+    public hold(id: string): PendingAction | undefined {
+        const action = this.queue.find(a => a.id === id && a.status === 'pending');
+        if (!action || !action.autoExecuteAt) return action;
+        delete action.autoExecuteAt;
+        this.emit('change', { type: 'updated', action } satisfies ActionEvent);
+        return action;
     }
 
     public getPending(): PendingAction[] {

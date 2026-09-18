@@ -51,4 +51,15 @@ describe('ActionCard', () => {
         render(<ActionCard actions={[mockAction]} onResolve={vi.fn()} />);
         expect(screen.queryByTestId('link-policy-note')).not.toBeInTheDocument();
     });
+
+    it('shows the auto countdown with a Hold button and names the rule', () => {
+        const onHold = vi.fn();
+        const auto = makeAction({ flaggedReason: 'Rule: No caps (100% caps)', source: 'rule', ruleName: 'No caps', suggestedAction: 'timeout', deleteMessages: true, autoExecuteAt: Date.now() + 7000 });
+        render(<ActionCard actions={[auto]} onResolve={vi.fn()} onHold={onHold} />);
+
+        expect(screen.getByRole('timer')).toHaveTextContent(/Auto: timeout in [67] s/);
+        expect(screen.getByTestId('link-policy-note')).toHaveTextContent(/Rule «No caps»: approving deletes the message and times out the user/);
+        fireEvent.click(screen.getByRole('button', { name: /Hold/ }));
+        expect(onHold).toHaveBeenCalledWith([auto.id]);
+    });
 });

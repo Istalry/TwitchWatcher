@@ -95,6 +95,7 @@ export interface SystemStatus {
     };
     platforms: Record<Platform, PlatformStatus>;
     sanctions?: { today: number };
+    auto?: { enabled: boolean; scheduled: number };
 }
 
 export type SanctionKind = 'timeout' | 'ban' | 'unban' | 'delete';
@@ -154,12 +155,35 @@ export interface PlatformSettingsMap {
 
 export type LinkPolicy = 'allow' | 'suppress' | 'ban';
 
+export type RuleType = 'words' | 'regex' | 'caps' | 'repeat';
+
+export interface Rule {
+    id: string;
+    name: string;
+    enabled: boolean;
+    type: RuleType;
+    words?: string[];
+    pattern?: string;
+    minLength?: number;
+    ratio?: number;
+    count?: number;
+    windowSeconds?: number;
+    category: ModerationCategory;
+    action: 'timeout' | 'ban';
+    deleteMessage: boolean;
+    auto: boolean;
+}
+
 export interface ModerationSettings {
     sensitivity: Sensitivity;
     categories: Record<ModerationCategory, boolean>;
     skipTrustedRoles: boolean;
     links: LinkPolicy;
     linkAllowlist: string[];
+    linksAuto: boolean;
+    rules: Rule[];
+    autoEnabled: boolean;
+    autoGraceSeconds: number;
 }
 
 export interface AppSettings {
@@ -168,6 +192,7 @@ export interface AppSettings {
     checkForUpdates: boolean;
     aiLanguage: string;
     defaultTimeoutDuration: number;
+    retentionDays: number;
     moderation: ModerationSettings;
     platforms: PlatformSettingsMap;
     ai: {

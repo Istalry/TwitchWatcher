@@ -4,6 +4,9 @@ import { DATA_DIR, moveFile } from '../paths';
 import crypto from 'crypto';
 import os from 'os';
 import { ModerationCategory, Platform } from './types';
+import type { Rule } from '../services/ruleEngine';
+
+export type { Rule } from '../services/ruleEngine';
 
 const SETTINGS_FILE = path.join(DATA_DIR, 'settings.json');
 const ALGORITHM = 'aes-256-gcm';
@@ -12,7 +15,7 @@ export type Sensitivity = 'lenient' | 'balanced' | 'strict';
 export type LinkPolicy = 'allow' | 'suppress' | 'ban'; // suppress = delete message + timeout; ban = delete message + ban
 
 /** Bump when the on-disk shape changes in a way `migrate()` has to handle. */
-export const SETTINGS_SCHEMA_VERSION = 3;
+export const SETTINGS_SCHEMA_VERSION = 4;
 
 export interface TwitchSettings {
     enabled: boolean;
@@ -53,6 +56,10 @@ export interface ModerationSettings {
     skipTrustedRoles: boolean; // don't analyze broadcaster / platform moderators
     links: LinkPolicy; // every non-allowlisted link becomes a card the streamer must approve
     linkAllowlist: string[]; // domains that never get flagged (parent domains match subdomains)
+    linksAuto: boolean; // execute link cards automatically after the grace period (needs autoEnabled)
+    rules: Rule[]; // deterministic rules, evaluated in order before the AI
+    autoEnabled: boolean; // master switch for automatic execution (rules/links only, never AI verdicts)
+    autoGraceSeconds: number; // countdown during which a card can be held or dismissed
 }
 
 export interface AppSettings {
@@ -65,6 +72,7 @@ export interface AppSettings {
     // Preferences
     aiLanguage: string;
     defaultTimeoutDuration: number;
+    retentionDays: number; // purge users inactive for this long (0 = never); banned users are kept
 
     moderation: ModerationSettings;
 
@@ -84,12 +92,17 @@ export const DEFAULT_SETTINGS: AppSettings = {
     checkForUpdates: true,
     aiLanguage: 'English',
     defaultTimeoutDuration: 600,
+    retentionDays: 90,
     moderation: {
         sensitivity: 'balanced',
         categories: { hate: true, harassment: true, threat: true, spam: true, vulgarity: true, other: true },
         skipTrustedRoles: true,
         links: 'allow',
         linkAllowlist: [],
+        linksAuto: false,
+        rules: [],
+        autoEnabled: false,
+        autoGraceSeconds: 10,
     },
     platforms: {
         twitch: { enabled: false, username: '', channel: '', clientId: '', clientSecret: '' },
@@ -150,6 +163,8 @@ export function migrate(parsed: Record<string, unknown>): { settings: Record<str
             changed = true;
         }
     }
+
+    // v3 -> v4: rules / auto mode / retention — new keys only, filled by withDefaults().
 
     if (version < SETTINGS_SCHEMA_VERSION) {
         out = { ...out, schemaVersion: SETTINGS_SCHEMA_VERSION };

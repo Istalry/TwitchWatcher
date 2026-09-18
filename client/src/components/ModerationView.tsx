@@ -11,6 +11,7 @@ interface Props {
     platforms: Record<Platform, PlatformStatus>;
     streamConnected: boolean;
     onResolve: (ids: string[], resolution: 'approved' | 'discarded', banDuration?: string) => void;
+    onHold?: (ids: string[]) => void;
     onModerate: (userKey: string, action: 'ban' | 'timeout') => void;
     onOpenSettings: () => void;
 }
@@ -18,7 +19,7 @@ interface Props {
 type Pane = 'chat' | 'queue';
 
 /** Split view: merged live chat on the left, the AI's pending-action queue on the right. */
-export function ModerationView({ messages, actions, platforms, streamConnected, onResolve, onModerate, onOpenSettings }: Props) {
+export function ModerationView({ messages, actions, platforms, streamConnected, onResolve, onHold, onModerate, onOpenSettings }: Props) {
     const [pane, setPane] = useState<Pane>('chat'); // only used below the lg breakpoint
 
     const noPlatform = PLATFORMS.every(p => !platforms[p]?.enabled);
@@ -87,6 +88,7 @@ export function ModerationView({ messages, actions, platforms, streamConnected, 
                                         actions={group}
                                         capabilities={platforms[group[0].platform]?.capabilities}
                                         onResolve={onResolve}
+                                        onHold={onHold}
                                     />
                                 ))}
                             </AnimatePresence>

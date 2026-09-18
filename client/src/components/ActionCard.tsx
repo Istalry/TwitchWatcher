@@ -1,4 +1,6 @@
+import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
+import { Hand, Zap } from 'lucide-react';
 import { type PendingAction, type PlatformCapabilities } from '../types';
 import { PlatformBadge } from './PlatformBadge';
 import { PLATFORM_META } from '../platformMeta';
@@ -7,11 +9,27 @@ interface ActionCardProps {
     actions: PendingAction[];
     capabilities?: PlatformCapabilities;
     onResolve: (ids: string[], resolution: 'approved' | 'discarded', banDuration?: string) => void;
+    /** Cancels a pending auto countdown (card stays for manual review). */
+    onHold?: (ids: string[]) => void;
+}
+
+/** Seconds left before `at`, re-rendered every second; null when there is no countdown. */
+function useCountdown(at: number | undefined): number | null {
+    const [now, setNow] = useState(() => Date.now());
+    useEffect(() => {
+        if (!at) return;
+        const timer = setInterval(() => setNow(Date.now()), 1000);
+        return () => clearInterval(timer);
+    }, [at]);
+    if (!at) return null;
+    return Math.max(0, Math.ceil((at - now) / 1000));
 }
 
 const FULL_CAPABILITIES: PlatformCapabilities = { ban: true, timeout: true, unban: true, deleteMessage: true };
 
-export function ActionCard({ actions, capabilities = FULL_CAPABILITIES, onResolve }: ActionCardProps) {
+export function ActionCard({ actions, capabilities = FULL_CAPABILITIES, onResolve, onHold }: ActionCardProps) {
+    const autoAt = actions.reduce<number | undefined>((min, a) => (a.autoExecuteAt && (!min || a.autoExecuteAt < min) ? a.autoExecuteAt : min), undefined);
+    const secondsLeft = useCountdown(autoAt);
     if (actions.length === 0) return null;
 
     // Use the first action for common details (username, etc.)
@@ -23,6 +41,8 @@ export function ActionCard({ actions, capabilities = FULL_CAPABILITIES, onResolv
     const suggested = actions.some(a => a.suggestedAction === 'ban') ? 'ban'
         : actions.some(a => a.suggestedAction === 'timeout') ? 'timeout' : 'none';
     const deletesMessages = actions.some(a => a.deleteMessages);
+    const rule = actions.find(a => a.source === 'rule')?.ruleName;
+    const policyLabel = rule ? `Rule «${rule}»` : 'Link policy';
 
     // Aggregate reasons (a coalesced action carries several, joined with " | ")
     const distinctReasons = Array.from(new Set(actions.flatMap(a => a.flaggedReason.split(' | '))));
@@ -93,10 +113,27 @@ export function ActionCard({ actions, capabilities = FULL_CAPABILITIES, onResolv
                     </div>
                 </div>
 
+                {secondsLeft !== null && canModerate && (
+                    <div className="mb-3 flex items-center gap-3 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2" data-testid="auto-countdown" role="timer">
+                        <Zap size={14} className="text-amber-300 shrink-0" />
+                        <span className="text-xs font-bold text-amber-200 flex-1">
+                            Auto: {suggested === 'ban' ? 'ban' : 'timeout'} in {secondsLeft} s
+                        </span>
+                        {onHold && (
+                            <button
+                                onClick={() => onHold(actionIds)}
+                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-amber-200 text-xs font-bold border border-amber-500/40"
+                            >
+                                <Hand size={12} /> Hold
+                            </button>
+                        )}
+                    </div>
+                )}
+
                 {deletesMessages && canModerate && (
                     <p className="text-[11px] text-amber-300/90 font-bold mb-3 flex items-center gap-2" data-testid="link-policy-note">
                         <span aria-hidden>⚠</span>
-                        Link policy: approving deletes the message{actions.length > 1 || mainAction.messageIds.length > 1 ? 's' : ''} and {suggested === 'ban' ? 'bans' : 'times out'} the user. Nothing happens until you confirm.
+                        {policyLabel}: approving deletes the message{actions.length > 1 || mainAction.messageIds.length > 1 ? 's' : ''} and {suggested === 'ban' ? 'bans' : 'times out'} the user.{secondsLeft === null ? ' Nothing happens until you confirm.' : ''}
                     </p>
                 )}
 

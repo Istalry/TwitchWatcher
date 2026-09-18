@@ -7,6 +7,7 @@ import { ChatUser, PendingAction, Platform, UserNote, userKey } from '../store/t
 import { IncomingMessage } from '../platforms/types';
 import type { Verdict } from './ai/aiService';
 import { disallowedLinks } from './linkDetector';
+import { evaluateRules } from './ruleEngine';
 import {
     ESCALATION_WINDOW_MS, FloodBreaker, buildAction, routeVerdict,
 } from './moderationPipeline';
@@ -65,6 +66,10 @@ export class AnalysisQueue {
 
         const key = userKey(msg.platform, msg.userId);
         const subject = { platform: msg.platform, userId: msg.userId, username: msg.username, displayName: msg.displayName };
+        // Auto mode only ever applies to deterministic hits, and only while the master switch is on.
+        const autoAt = (enabled: boolean) => (moderation.autoEnabled && enabled
+            ? Date.now() + Math.max(3, moderation.autoGraceSeconds || 10) * 1000
+            : undefined);
 
         // Deterministic link policy: a plain URL never needs the AI. The card still needs the streamer's approval;
         // approving deletes the message and times out ('suppress') or bans ('ban') the user.
@@ -84,6 +89,31 @@ export class AnalysisQueue {
                     suggestedAction: moderation.links === 'ban' ? 'ban' : 'timeout',
                     source: 'link',
                     deleteMessages: true,
+                    autoExecuteAt: autoAt(moderation.linksAuto),
+                }));
+                return;
+            }
+        }
+
+        // Deterministic rules (words / regex / caps / repeat): same treatment, no AI.
+        if (moderation.rules?.length) {
+            const recent = (this.deps.history.getUser(key)?.messages ?? []).filter(m => m.id !== storedMessageId);
+            const hit = evaluateRules(moderation.rules, msg.content, { recentMessages: recent });
+            if (hit) {
+                console.log(`RULE [${msg.displayName}@${msg.platform}] ${hit.rule.name} (${hit.detail}): ${msg.content}`);
+                this.deps.actions.addOrAppend(buildAction({
+                    key,
+                    entry: subject,
+                    text: msg.content,
+                    messageIds: [storedMessageId],
+                    reason: `Rule: ${hit.rule.name} (${hit.detail})`,
+                    category: hit.rule.category,
+                    severity: 3,
+                    suggestedAction: hit.rule.action,
+                    source: 'rule',
+                    ruleName: hit.rule.name,
+                    deleteMessages: hit.rule.deleteMessage,
+                    autoExecuteAt: autoAt(hit.rule.auto),
                 }));
                 return;
             }
