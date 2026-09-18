@@ -13,6 +13,7 @@ import { sanctionLog } from './store/sanctionLog';
 import { executeSanction, requestFromAction, revertSanction, unbanUser } from './services/sanctions';
 import { autoExecutor } from './services/autoExecutorInstance';
 import { validateRule } from './services/ruleEngine';
+import { MIN_PASSWORD_LENGTH, exportSettings, importSettings } from './services/backup';
 import { actionQueue, ActionEvent } from './store/actionQueue';
 import { settingsStore, AppSettings, PlatformSettingsMap } from './store/settings';
 import { ChatMessage, PLATFORMS, Platform, userKey } from './store/types';
@@ -206,6 +207,13 @@ app.post('/api/users/:key/moderate', async (req, res) => {
         console.error(`Manual ${action} failed for ${key}:`, errorMessage(err));
         res.status(500).json({ error: `Failed to ${action}: ${errorMessage(err)}` });
     }
+});
+
+app.post('/api/users/prune', (req, res) => {
+    const days = settingsStore.get().retentionDays;
+    const removed = historyStore.prune(days);
+    if (removed) console.log(`[Retention] Purged ${removed} user(s) inactive for more than ${days} days`);
+    res.json({ success: true, removed, days });
 });
 
 app.delete('/api/users', (req, res) => {
@@ -451,6 +459,41 @@ app.get('/api/settings', (req, res) => {
     res.json(settingsStore.get());
 });
 
+// --- BACKUP ---
+
+app.post('/api/settings/export', (req, res) => {
+    const password = String(req.body?.password ?? '');
+    if (password.length < MIN_PASSWORD_LENGTH) return res.status(400).json({ error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters` });
+    const file = exportSettings(settingsStore.get(), password);
+    const name = `twitchwatcher-${new Date().toISOString().slice(0, 10)}.twbackup`;
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Disposition', `attachment; filename="${name}"`);
+    res.send(file);
+});
+
+app.post('/api/settings/import', async (req, res) => {
+    const { password, data } = req.body ?? {};
+    if (typeof data !== 'string' || !data) return res.status(400).json({ error: 'No backup file received' });
+    let imported;
+    try {
+        imported = importSettings(data, String(password ?? ''));
+    } catch (err) {
+        return res.status(400).json({ error: errorMessage(err) });
+    }
+    // Keep the current setup state: an import on a fresh install completes it.
+    imported.isSetupComplete = true;
+    settingsStore.replace(imported);
+    authService.invalidate();
+    try {
+        await platformRegistry.disconnectAll();
+        await platformRegistry.connectAll();
+    } catch (err) {
+        console.error('Reconnect after import failed:', errorMessage(err));
+    }
+    console.log('[Backup] Settings restored from a backup file');
+    res.json({ success: true, nextAuthUrl: nextAuthUrl() });
+});
+
 app.put('/api/settings', async (req, res) => {
     const { aiLanguage, defaultTimeoutDuration, checkForUpdates, retentionDays, moderation, platforms, ai } = req.body as Partial<AppSettings>;
     const before = settingsStore.get().platforms;
@@ -541,6 +584,17 @@ app.get('*', (req, res) => {
     res.sendFile(indexPath);
 });
 
+/** Purges inactive users at startup and once a day (settings.retentionDays, 0 = never). */
+const startRetentionSweep = () => {
+    const sweep = () => {
+        const days = settingsStore.get().retentionDays;
+        const removed = historyStore.prune(days);
+        if (removed) console.log(`[Retention] Purged ${removed} user(s) inactive for more than ${days} days`);
+    };
+    sweep();
+    setInterval(sweep, 24 * 60 * 60 * 1000).unref();
+};
+
 const start = async () => {
     try {
         const PORT = process.env.PORT || 3000;
@@ -549,6 +603,7 @@ const start = async () => {
             const url = `http://localhost:${PORT}`;
             console.log(`TwitchWatcher v${APP_VERSION} running on ${url} (data: ${DATA_DIR})`);
             updateChecker.start();
+            startRetentionSweep();
 
             // Auto-open browser (set NO_BROWSER=1 to skip, e.g. when a dev client is already open)
             if (!process.env.NO_BROWSER && !process.argv.includes('--no-browser')) {

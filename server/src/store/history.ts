@@ -41,6 +41,23 @@ function migrateUser(raw: any): ChatUser {
     };
 }
 
+/** Keys of users with no activity for `days` days (0 = never prune). Banned users are always kept. */
+export function staleUserKeys(users: Iterable<ChatUser>, days: number, now = Date.now()): string[] {
+    if (!days || days <= 0) return [];
+    const cutoff = now - days * 24 * 60 * 60 * 1000;
+    const stale: string[] = [];
+    for (const user of users) {
+        if (user.status === 'banned') continue;
+        const last = Math.max(
+            0,
+            ...user.messages.map(m => m.timestamp),
+            ...user.notes.map(n => n.timestamp),
+        );
+        if (last < cutoff) stale.push(user.key);
+    }
+    return stale;
+}
+
 export class HistoryStore {
     private users: Map<string, ChatUser> = new Map();
     private saveTimer: NodeJS.Timeout | null = null;
@@ -148,6 +165,14 @@ export class HistoryStore {
     public clearAll() {
         this.users.clear();
         this.scheduleSave();
+    }
+
+    /** Removes users inactive for `days` days; returns how many were dropped. */
+    public prune(days: number, now = Date.now()): number {
+        const keys = staleUserKeys(this.users.values(), days, now);
+        for (const key of keys) this.users.delete(key);
+        if (keys.length) this.scheduleSave();
+        return keys.length;
     }
 
     private scheduleSave() {

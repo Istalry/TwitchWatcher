@@ -240,6 +240,12 @@ export class SettingsStore {
         this.save();
     }
 
+    /** Replaces everything (backup import). */
+    public replace(settings: AppSettings) {
+        this.settings = withDefaults(DEFAULT_SETTINGS, settings);
+        this.save();
+    }
+
     // Specific updaters for nested objects to make usage easier
     public updatePlatform<P extends Platform>(platform: P, updates: Partial<PlatformSettingsMap[P]>) {
         this.settings.platforms[platform] = { ...this.settings.platforms[platform], ...updates };

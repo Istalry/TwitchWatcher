@@ -7,6 +7,7 @@ import {
 import { SecureInput } from './SecureInput';
 import { TwitchCard, YouTubeCard, TikTokCard } from './platforms/PlatformCards';
 import { RulesEditor } from './RulesEditor';
+import { BackupPanel } from './BackupPanel';
 
 interface Props {
     status?: SystemStatus;
@@ -137,6 +138,18 @@ export function Settings({ status = EMPTY_STATUS, info = null, onSaved }: Props)
             alert(err instanceof Error ? err.message : 'Failed to save settings.');
         } finally {
             setIsSaving(false);
+        }
+    };
+
+    const handlePrune = async () => {
+        try {
+            const res = await fetch('/api/users/prune', { method: 'POST' });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Purge failed');
+            alert(data.removed ? `Removed ${data.removed} inactive user(s).` : data.days ? 'Nothing to purge.' : 'Retention is set to forever; nothing was purged.');
+            onSaved?.();
+        } catch (err) {
+            alert(err instanceof Error ? err.message : 'Purge failed');
         }
     };
 
@@ -468,9 +481,44 @@ export function Settings({ status = EMPTY_STATUS, info = null, onSaved }: Props)
                             {info?.dataDir ?? '…'}
                         </div>
                         <p className="text-[11px] text-zinc-500 mt-2">
-                            Holds <code>settings.json</code> (encrypted), <code>users.json</code> and <code>bans.json</code>. It survives updates: just replace the exe.
+                            Holds <code>settings.json</code> (encrypted), <code>users.json</code>, <code>bans.json</code> and <code>sanctions.json</code>. It survives updates: just replace the exe.
                             {info?.version ? ` Running v${info.version}.` : ''}
                         </p>
+                    </div>
+
+                    <div>
+                        <label className={labelClass} htmlFor="retention-days">Keep inactive users for (days, 0 = forever)</label>
+                        <div className="flex flex-wrap items-center gap-3">
+                            <input
+                                id="retention-days"
+                                type="number"
+                                min={0}
+                                className={`${inputClass} w-32`}
+                                value={settings.retentionDays ?? 90}
+                                onChange={e => setSettings({ ...settings, retentionDays: Math.max(0, parseInt(e.target.value) || 0) })}
+                            />
+                            <button
+                                onClick={handlePrune}
+                                className="px-4 py-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-sm font-bold text-zinc-200"
+                            >
+                                Purge now
+                            </button>
+                        </div>
+                        <p className="text-[11px] text-zinc-500 mt-2">
+                            Users with no message for that long are dropped from <code>users.json</code> at startup and once a day. Banned users are always kept. Save first if you changed the number.
+                        </p>
+                    </div>
+
+                    <div>
+                        <label className={labelClass}>Backup</label>
+                        <BackupPanel onImported={nextAuthUrl => {
+                            onSaved?.();
+                            if (nextAuthUrl && confirm('Settings restored. A platform needs to be connected to your account — do it now?')) {
+                                window.location.href = nextAuthUrl;
+                                return;
+                            }
+                            fetchSettings();
+                        }} />
                     </div>
                 </div>
             </div>
